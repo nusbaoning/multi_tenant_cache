@@ -13,7 +13,7 @@ import random
 
 uclnDict = {"netsfs":47949, "mix":195423,
 # "mds_0":	769376,
-# "hm_0":	488986,
+"hm_0":	488986,
 "prn_0":	985474,
 "proj_0":	462462,
 "prxy_0":	79483,
@@ -26,6 +26,7 @@ uclnDict = {"netsfs":47949, "mix":195423,
 # "wdev_0":	52111,
 # "web_0":	1887115,
 
+"probuild": 1970,
 "bs24":	4155,
 "bs39":	12190,
 "dev5.3.7.19":	1873854,
@@ -39,13 +40,13 @@ uclnDict = {"netsfs":47949, "mix":195423,
 "dad807":	294190,
 "dap812":	224019,
 
-# "prn_1" :	19343730 ,
+"prn_1" :	19343730 ,
 # "proj_2" : 	107472935,
-# "proj_3" : 	1383543,
+"proj_3" : 	1383543,
 # "prxy_1" : 	196870,
 # "src1_1" : 	30780233,
 # "src2_1" : 	5019544,
-# "usr_0" : 	554527,
+"usr_0" : 	554527,
 # "web_2" :	17610218,
 
 "fileserver":	3840461,
@@ -82,7 +83,7 @@ uclnDict = {"netsfs":47949, "mix":195423,
 "prxy_10":	33713	
 
 }
-pathDirCam = "./"
+pathDirCam = "/home/trace/ms-cambridge/"
 pathDictHome = "/home/trace/"
 
 pathDict = {
@@ -99,7 +100,8 @@ pathDict = {
 "dad807": "/home/bn/python/DisplayAdsDataServer/Traces/DisplayAdsDataServer.2008-03-08.08-07.trace.csv.csv.req",
 "dap812": "/home/bn/python/DisplayAdsPayload/Traces/DisplayAdsPayload.2008-03-08.08-12.trace.csv.csv.req",
 "netsfs" : "filebench-netsfs.req",
-"mix" : "mix-trace.req"
+"mix" : "mix-trace.req",
+"probuild" : "production-build00-1-4K.req"
 }
 
 
@@ -356,12 +358,51 @@ def load_file(traceID, typeID, sizerate=0.1, p=1):
 	print(traceID, p, sizerate, size, 1.0*ssd.hit/readReq, ssd.update, sep=',', file=logFile)
 	logFile.close()
 
-traceList = ["ts_0", "wdev_0"]
+
+def load_file_time(traceID, typeID, sizerate=0.1, p=1):
+    readReq = 0
+    # print(traceID)
+    historyHit = 0
+    historyReq = 0
+    size = int(sizerate*uclnDict[traceID])
+    # print(sizerate*uclnDict[traceID], size)
+    ssd = PLRU(size, p)
+    fin = open(getPath(traceID, typeID), 'r')
+    lines = fin.readlines()
+    print("load file finished")
+    logFile = open(logFilename, "a")
+    print(traceID, p, sizerate, size, sep=",", end=",", file=logFile)
+    for line in lines:
+        items = line.split(' ')
+        reqtype = int(items[0])
+        block = int(items[2])
+        if reqtype == 1:            
+            ssd.delete_cache(block)
+        else:       
+            if readReq % PERIODLEN == 0 and readReq!=0:
+                localHitRatio = 1.0*(ssd.hit-historyHit)/(readReq-historyReq)
+                historyHit = ssd.hit
+                historyReq = readReq
+                print(localHitRatio, sep=",", end=",", file=logFile)
+            readReq += 1
+            ssd.is_hit(block)               
+            ssd.update_cache(block)
+    fin.close()
+    print("size", size, p)
+    print("total hit rate", 1.0*ssd.hit/readReq, ssd.update)
+    
+    print(1.0*ssd.hit/readReq, ssd.update, 1.0*ssd.hit/ssd.update, sep=',', file=logFile)
+    logFile.close()
+
+TRACELIST = ["src2_0", "prn_1", "prxy_0", "hm_0", "proj_3", "usr_0", "wdev_0", "ts_0", "probuild"]
+PLIST = [0.2, 0.4, 0.6, 0.8, 1]
+SIZERATELIST = [0.01, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8]
+traceList = ["wdev_0"]
 for trace in traceList:
-	for sizerate in [0.2, 0.4, 0.6, 0.8]:
-		for p in [0.2, 0.4, 0.6, 0.8]:
+	for sizerate in [0.01, 0.1, 0.4, 0.8]:
+		for p in [0.2, 0.6, 1]:
 			start = time.clock()
-			load_file(trace, "cam", sizerate, p)
+			load_file_time(trace, "cam", sizerate, p)
 			end = time.clock()
 			print(trace, "cam", sizerate, p, "consumed ", end-start, "s")
 			# sys.exit(-1) 
