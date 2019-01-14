@@ -158,6 +158,9 @@ class PLRU(object):
         return False
 
 
+     #para : block to update
+     #function : if hit, move block to head; else, p probabity to update new block
+     #return : {evictedBlock, updatedBlock} if updated; None if not
     def update_cache(self, key):
         # First, see if any value is stored under 'key' in the cache already.
         # If so we are going to replace that value with the new one.
@@ -197,7 +200,8 @@ class PLRU(object):
         # If the node already contains something we need to remove the old
         # key from the dictionary.
         if not node.empty:
-            del self.ssd[node.key]
+        	oldkey = node.key
+        	del self.ssd[node.key]
 
         # Place the new key and value in the node
         node.empty = False
@@ -211,7 +215,7 @@ class PLRU(object):
         # being circular. Therefore, the ordering is already correct, we just
         # need to adjust the 'head' variable.
         self.head = node
-        return key
+        return (oldKey, key)
 
 
     def delete_cache(self, key):
@@ -394,15 +398,15 @@ def load_file_time(traceID, typeID, sizerate=0.1, p=1):
     print(1.0*ssd.hit/readReq, ssd.update, 1.0*ssd.hit/ssd.update, sep=',', file=logFile)
     logFile.close()
 
-TRACELIST = ["src2_0", "prn_1", "prxy_0", "hm_0", "proj_3", "usr_0", "wdev_0", "ts_0", "probuild"]
-PLIST = [0.2, 0.4, 0.6, 0.8, 1]
-SIZERATELIST = [0.01, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8]
-traceList = ["wdev_0"]
-for trace in traceList:
-	for sizerate in [0.01, 0.1, 0.4, 0.8]:
-		for p in [0.2, 0.6, 1]:
-			start = time.clock()
-			load_file_time(trace, "cam", sizerate, p)
-			end = time.clock()
-			print(trace, "cam", sizerate, p, "consumed ", end-start, "s")
-			# sys.exit(-1) 
+# TRACELIST = ["src2_0", "prn_1", "prxy_0", "hm_0", "proj_3", "usr_0", "wdev_0", "ts_0", "probuild"]
+# PLIST = [0.2, 0.4, 0.6, 0.8, 1]
+# SIZERATELIST = [0.01, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8]
+# traceList = ["wdev_0"]
+# for trace in traceList:
+# 	for sizerate in [0.01, 0.1, 0.4, 0.8]:
+# 		for p in [0.2, 0.6, 1]:
+# 			start = time.clock()
+# 			load_file_time(trace, "cam", sizerate, p)
+# 			end = time.clock()
+# 			print(trace, "cam", sizerate, p, "consumed ", end-start, "s")
+# 			# sys.exit(-1) 

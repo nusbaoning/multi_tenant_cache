@@ -1,5 +1,5 @@
 from __future__ import print_function
-from mtc_test_size import PLRU
+from mtc_test_size_p import PLRU
 import time
 import sys
 # baoning
@@ -28,6 +28,22 @@ class Log(object):
 def eprint(s):
 	print(s)
 		
+def load_trace(fin):
+	reqs = []
+	lines = fin.readlines()
+	for line in lines:
+		items = line.split(' ')
+		reqtype = int(items[0])
+		block = int(items[2])
+		reqs.append((reqtype, block))
+	return reqs
+
+def update_cache(req, ssd):
+	hit = ssd.it_hit()
+	if req[0] == 1 and hit:
+		# maybe add a function in PLRU
+		ssd.update += 1
+	return ssd.update_cache(req)
 
 def do_single_trace(traceName, parameters):
 
@@ -39,8 +55,8 @@ def do_single_trace(traceName, parameters):
 	#initial
 	baseline = PLRU(parameters.size, parameters.p)
 	ssd = PLRU(parameters.size, parameters.p)
-	evictQueue = {[{-1, -1}]*parameters.evictQueue, 0, 0}
-	shadowQueue = {[{-1, -1}]*parameters.shadowQueue, 0, 0}
+	evictQueue = ([(-1, -1)]*parameters.evictQueue, 0, 0)
+	shadowQueue = ([(-1, -1)]*parameters.shadowQueue, 0, 0)
 	log = Log(parameters)
 
 	for req in reqs:
@@ -49,15 +65,19 @@ def do_single_trace(traceName, parameters):
 		#?what about write request?
 		
 		debug = baseline.hit + baseline.update
-		updateCache(req, baseline)
+		update_cache(req, baseline)
 		if baseline.hit + baseline.update - debug == 0:
 			eprint("error")
 			sys.exit(-1)
 
-		{shadow, evict} = updateCache(req, ssd)
+		(shadow, evict) = update_cache(req, ssd)
 		updateQueue(evict, evictQueue)
 		updateShadow(shadow, shadowQueue)
 
 	log.print(baseline, ssd)
  
- 
+
+fin = open("test.req", "r")
+reqs = load_trace(fin)
+fin.close()
+print(reqs)
