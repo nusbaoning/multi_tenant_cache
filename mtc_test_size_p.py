@@ -157,6 +157,18 @@ class PLRU(object):
             return True
         return False
 
+    def get_hit(self):
+    	return self.hit
+
+    def add_hit(self):
+    	self.hit += 1
+
+    def get_update(self):
+    	return self.update
+
+    def add_update(self):
+    	self.update += 1
+
 
      #para : block to update
      #function : if hit, move block to head; else, p probabity to update new block
@@ -170,7 +182,7 @@ class PLRU(object):
             # Update the list ordering.
             self.mtf(node)
             self.head = node
-            return None
+            return (None, None)
 
         # Ok, no value is currently stored under 'key' in the cache. We need
         # to choose a node to place the new item in. There are two cases. If
@@ -186,7 +198,7 @@ class PLRU(object):
         random.seed()
         roll = random.random()
         if roll>=self.p:
-        	return None
+        	return (None, -1)
 
         # Since the list is circular, the tail node directly preceeds the
         # 'head' node.
@@ -196,11 +208,11 @@ class PLRU(object):
 
         self.update += 1
         node = self.head.prev
-
+        oldKey = None
         # If the node already contains something we need to remove the old
         # key from the dictionary.
         if not node.empty:
-        	oldkey = node.key
+        	oldKey = node.key
         	del self.ssd[node.key]
 
         # Place the new key and value in the node
