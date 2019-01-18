@@ -42,36 +42,62 @@ class DPLRU(PLRU):
 		super(DPLRU, self).__init__(parameters.size, parameters.p)
 		self.evictQueue = ([-1]*parameters.evictQueue, 0, 0)
 		self.shadowQueue = ([-1]*parameters.shadowQueue, 0, 0)
+		# 0 loc, 1/2/3=cache/eq/sq/nowhere, #is the relevant number of hits
 		self.log = {}
 
 	def is_hit(self, req):
 		if req in self.log:
-			self.log[req] = (self.log[req][0]+1, False)
-		else:
-			self.log[req] = (0, True)
+			loc = self.log[req][0]
+			self.log[req][loc]+=1
+		#if not in log, means not in cache/eq/sq, it will appear in cache/sq later
 		return super(DPLRU, self).is_hit(req)
 
-	def updateQueue(self, req, sign):
-		if sign == "e":
+
+	def updatelog(self, req, loc):
+		if req in self.log:
+			self.log[req][0] = loc
+			self.log[req][loc] = 0
+		else:
+			self.log[req] = [loc, 0, 0, 0]
+
+	def deletelog(self, req, loc):
+		if req in self.log:
+			if self.log[req][0] == loc:
+				del self.log[req]
+
+	def update_queue(self, req, sign):
+		if sign == 2:
 			queue = self.evictQueue
-		elif sign == "s":
+		elif sign == 3:
 			queue = self.shadowQueue
+		self.updatelog(req, sign)
 		(l, head, tail) = queue
 		old = l[tail]
 		if old!=-1:
-			print(old, self.log, type(old), type(self.log))
-			del self.log[old]
+			# eprint(old, self.log, type(old), type(self.log))
+			self.deletelog(old, sign)
+
 		l[tail] = req
 		tail = (tail + 1) % len(l)
 		if head==tail:
 			head = (head + 1) % len(l)
+		
+		if sign == 2:
+			self.evictQueue = (l, head, tail)
+		elif sign == 3:
+			self.shadowQueue = (l, head, tail)
+		# queue = (l, head, tail)
+		# eprint(queue)
+		# print(self.shadowQueue, self.evictQueue)
 
 	def update_cache(self, req):
 		(evict, update) = super(DPLRU, self).update_cache(req)
 		if evict != None:
-			self.updateQueue(evict, "e")
+			self.update_queue(evict, 2)
 		if update==-1:
-			self.updateQueue(req, "s")	
+			self.update_queue(req, 3)	
+		elif update!=None:
+			self.updatelog(req, 1)
 		return (evict, update)	
 
 	def get_log(self):
@@ -128,7 +154,7 @@ def do_single_trace(traceName, parameters):
 			sys.exit(-1)
 
 		(shadow, evict) = update_cache(req, ssd)
-		updateQueue(evict, evictQueue)
+		update_queue(evict, evictQueue)
 		updateShadow(shadow, shadowQueue)
 
 	log.print(baseline, ssd)
@@ -138,7 +164,7 @@ fin = open("test.req", "r")
 reqs = load_trace(fin)
 fin.close()
 print(reqs)
-pd = Parameter(3, 0.5, 2, 2)
+pd = Parameter(3, 0.8, 2, 2)
 ssd = DPLRU(pd)
 for req in reqs:
 	a = update_cache(req, ssd)
