@@ -169,6 +169,11 @@ class PLRU(object):
     def add_update(self):
     	self.update += 1
 
+    def get_size(self):
+    	return self.size
+
+    def get_p():
+    	return self.p
 
      #para : block to update
      #function : if hit, move block to head; else, p probabity to update new block
@@ -276,12 +281,17 @@ class PLRU(object):
             yield node
             node = node.next
 
-    def change_size(self, size):        
+    def change_p(self, p):
+    	self.p = p
+
+    def change_size(self, size):
+    	self.size = size      
+    	l = []  
         if size > self.listSize:
             self.add_tail_node(size - self.listSize)
         elif size < self.listSize:
-            self.remove_tail_node(self.listSize - size)
-        return self.listSize
+            l = self.remove_tail_node(self.listSize - size)
+        return l
 
     # Increases the size of the cache by inserting n empty nodes at the tail
     # of the list.
@@ -293,21 +303,24 @@ class PLRU(object):
 
             self.head.prev.next = node
             self.head.prev = node
-
         self.listSize += n
 
     # Decreases the size of the list by removing n nodes from the tail of the
     # list.
     def remove_tail_node(self, n):
         assert self.listSize > n
+        l = []
         for i in range(n):
             node = self.head.prev
             if not node.empty:
                 del self.ssd[node.key]
+                l.append(node.key)
             # Splice the tail node out of the list
             self.head.prev = node.prev
             node.prev.next = self.head
+
         self.listSize -= n
+        return l
 
     def get_top_n(self, number):
         node = self.head
@@ -315,6 +328,18 @@ class PLRU(object):
         for i in range(0, min(number, len(self.ssd))):
             l.append(node.key)
             node = node.next
+        # print("debug", len(l), l==None)
+        return l
+
+    def get_tail_n(self, number):
+    	node = self.head.prev
+    	while node.empty:
+    		node = node.prev
+        
+        l = []
+        for i in range(0, min(number, len(self.ssd))):
+            l.append(node.key)
+            node = node.prev
         # print("debug", len(l), l==None)
         return l
 

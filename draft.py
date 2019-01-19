@@ -16,6 +16,7 @@ class Log(object):
 		self.periodNum = 0
 		self.periodLength = parameters.periodLength 
 		self.start = time.clock()
+		self.l = parameters.l
 		self.parameters = parameters
 
 	def tick():
@@ -65,6 +66,9 @@ class DPLRU(PLRU):
 			if self.log[req][0] == loc:
 				del self.log[req]
 
+	def get_req_hit(self, req, loc):
+		return self.log[req][loc]
+
 	def update_queue(self, req, sign):
 		if sign == 2:
 			queue = self.evictQueue
@@ -100,6 +104,11 @@ class DPLRU(PLRU):
 			self.updatelog(req, 1)
 		return (evict, update)	
 
+	def change_size(self, n):
+		l = super(DPLRU, self).change_size()
+		for req in l:
+			self.update_queue(req, 2)
+
 	def get_log(self):
 		return self.log
 
@@ -108,6 +117,19 @@ class DPLRU(PLRU):
 
 	def get_shadowQueue(self):
 		return self.shadowQueue
+
+	def parseq(self, loc):
+		if loc == 2:
+			q = self.evictQueue
+		else:
+			q = self.shadowQueue
+		# ll = []
+		# (l, head, tail) = q
+		# i = head
+		# only no eviction of eq&sq, attention
+		return q
+
+			
 
 def eprint(s):
 	print(s)
@@ -128,6 +150,71 @@ def update_cache(req, ssd):
 		ssd.add_update()
 	return ssd.update_cache(req[1])
 
+def cal_p(ssd, loc, actualp, vp):
+	h = 0
+	em = int(1/actualp)
+	en = int(1/vp)
+	q = ssd.parseq(loc)
+	if q[2] < q[3]:
+		q = q[1][q[2]:q[3]]
+	if actualp > vp: #reduce
+		for req in q:
+			h += min(en-em, ssd.get_req_hit(req, loc))
+		h = -h
+	else: #add
+		for req in q:
+			h += max(ssd.get_req_hit(req, loc)-en, 0)
+	return h
+
+def cal_s(ssd, loc, objective, upbound):
+	i = 0
+	if objective > 0:
+		q = ssd.parseq(2)
+		(l, head, tail) = q
+		
+		while l[head]!=-1 and i<upbound:
+			req = l[head]
+			objective-=self.get_req_hit(req, 2)
+			i += 1
+			head = (head+1) % len(l)
+			if objective<=0:
+				return i
+		return upbound
+
+	q = ssd.get_tail_n(upbound)
+	for req in q:
+		objective += ssd.get_req_hit(req, 1)
+		i += 1
+		if objective>=0:
+			return i
+			
+		
+
+def modify_config(ssd, baseline, log):
+	objective = baseline.get_hit() - ssd.get_hit()
+	op = baseline.get_p()
+	osize = baseline.get_size()
+	actualp = ssd.get_p()
+	actuals = ssd.get_size()
+	mc = actualp * actuals
+	config = (-1, -1)
+	for i in log.l:
+		vp = min(1, max(actualp + i*op, 0.2))
+		if actualp > vp:
+			h = cal_p(ssd, 1, actualp, vp)
+			s = cal_s(ssd, 2, objective-h) + actuals
+		else:
+			h = cal_p(ssd, 3, actualp, vp)
+			s = cal_s(ssd, 1, objective-h) + actuals
+		if mc > vp*s:
+			mc = vp*s
+			config = (vp, s)
+
+	if vp!=actualp and s!=actuals:
+		ssd.change_size(s)
+		ssd.change_p(vp)
+	return config
+
 def do_single_trace(traceName, parameters):
 
 	#load trace
@@ -144,7 +231,7 @@ def do_single_trace(traceName, parameters):
 
 	for req in reqs:
 		if log.tick():
-			modify_config(ssd, evictQueue, shadowQueue, log)
+			modify_config(ssd, baseline, log)
 		#?what about write request?
 		
 		debug = baseline.hit + baseline.update
