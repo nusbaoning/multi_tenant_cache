@@ -60,6 +60,10 @@ def load_mtvt_file(filename):
     csvfile.close()
     return d
 
+# 数据处理部分将命中率向下取整
+# 我选择命中率的原则如下：
+# 1. 整个区间按照想要生成的线个数分成N段
+# 2. 遍历区间内所有命中率，选择命中率±1对应的配置最多的画图
 def do_trace(trace, l, d, num=3):
     fig = plt.figure()
     minhr = l[0][1]
@@ -71,7 +75,7 @@ def do_trace(trace, l, d, num=3):
     maxnum = 0
     maxkey = None
     i = 0
-
+    maxhrList = [-1]
 
     for j in range(0, len(l)):
         key = l[j]
@@ -83,27 +87,33 @@ def do_trace(trace, l, d, num=3):
             if (trace, hr+1) in d:
                 num += len(d[trace, hr+1])
 
-            if num > maxnum:
+            if num > maxnum and hr-maxhrList[-1]>2:
                 maxnum = num
                 maxkey = key
         else:
             pList = []
             sList = []
-            print(maxkey)
+            hr = maxkey[1] 
+            maxhrList.append(hr)
+            print(maxkey, d[maxkey])
             for (p,s) in d[maxkey]:
                 pList.append(p)
                 sList.append(s) 
-            hr = maxkey[1] 
+            
             if (trace, hr-1) in d:
+            	print(hr-1, d[(trace, hr-1)])
                 for (p,s) in d[(trace, hr-1)]:
                     pList.append(p)
                     sList.append(s) 
             if (trace, hr+1) in d:
-                for (p,s) in d[maxkey]:
+            	print(hr+1, d[(trace, hr+1)])
+                for (p,s) in d[(trace, hr+1)]:
                     pList.append(p)
                     sList.append(s) 
-            print(trace, maxnum)
+            print(trace, "num:", maxnum)
             print("present", present)
+            print("pList", pList)
+            print("sList", sList)
             plt.plot(pList, sList, marker=mymarkers[i], label=hr)
             i += 1
             if i >= num:
@@ -138,9 +148,11 @@ for key in keys:
     elif present == trace:
         pass
     else:
+    	print(trace)
         do_trace(present, keys[s:i], d)
         s = i
         present = trace
     i += 1
+do_trace(trace, keys[s:i], d)
 
 
