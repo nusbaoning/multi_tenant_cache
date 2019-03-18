@@ -58,10 +58,19 @@ def check_ps_principle(filename, d):
     print(rate/len(traces))
 
 # input key=trace, value=[(p,s,hr)]
-# output {d1, d2}
-# d1 key = (trace, p, s), value = hr
-# d2 key = (trace, hr, )
+# output key = (trace, p, s), value = hr
 def convert_d(d, hitRange):
+    dLookup = {}
+    for key in d.keys():
+        l = d[key]
+        for item in l:
+            (p, s, hr) = item
+            dLookup[(key, p, s)] = hr
+    return dLookup
+
+# return the best config as（cost, p, s)
+def get_config():
+    pass
 
 
 filename = "mtvt_result.csv"
@@ -69,5 +78,25 @@ d = load_mtvt_file(filename)
 hitRange = 1
 pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
 sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
+dLookup = convert_d(d)
+indexList = []
+for trace in traceMtvtDict:
+    print(trace)
+    l = traceMtvtDict[trace]
+    for hr in l:
+        (defaults, allcons) = find_default(dLookup, hr, hitRange)
 
+        templ = []        
+        for cons in allcons:
+            (p, s) = cons
+            templ.append(p*s, p, s)
+        templ.sort()
+
+        for default in defaults:
+            bestCon = get_config(dLookup, default, hr, hitRange)
+            index = templ.index(bestCon)
+            print(bestCon, templ, templ.index)
+            indexList.append(index)
+print(indexList)
+print(1.0*sum(indexList)/len(indexList))
 
