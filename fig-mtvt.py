@@ -8,6 +8,7 @@ from matplotlib import axes
 from matplotlib.font_manager import FontProperties
 font = FontProperties(fname='/Library/Fonts/Songti.ttc')
 mymarkers = ['*', 'o', 'v', 's', '+', 'x', 'd', 'D', '1', '2', '3', '4']
+traceMtvtDict = {}
 # https://baijiahao.baidu.com/s?id=1608586625622704613&wfr=spider&for=pc
 # https://www.cnblogs.com/altlb/p/7160191.html
 # csvfile = open('test.csv', 'rb')
@@ -60,26 +61,60 @@ def load_mtvt_file(filename):
     csvfile.close()
     return d
 
+def draw_line(d, maxkey, maxnum, maxhrList, i):
+	pList = []
+	sList = []
+	trace = maxkey[0]
+	hr = maxkey[1] 
+	maxhrList.append(hr)
+	print(maxkey, d[maxkey])
+	for (p,s) in d[maxkey]:
+		pList.append(p)
+		sList.append(s) 
+
+	if (trace, hr-1) in d:
+		print(hr-1, d[(trace, hr-1)])
+		for (p,s) in d[(trace, hr-1)]:
+			pList.append(p)
+			sList.append(s) 
+	if (trace, hr+1) in d:
+# print(hr+1, d[(trace, hr+1)])
+		for (p,s) in d[(trace, hr+1)]:
+			pList.append(p)
+			sList.append(s) 
+	print(trace, "num:", maxnum)
+	print("present", present)
+	print("pList", pList)
+	print("sList", sList)
+	if trace in traceMtvtDict:
+		traceMtvtDict[trace].append(hr)
+	else:
+		traceMtvtDict[trace] = [hr]
+        return (pList, sList)
+		
 # 数据处理部分将命中率向下取整
 # 我选择命中率的原则如下：
 # 1. 整个区间按照想要生成的线个数分成N段
 # 2. 遍历区间内所有命中率，选择命中率±1对应的配置最多的画图
-def do_trace(trace, l, d, num=3):
+def do_trace(trace, l, d, linenum=3):
     fig = plt.figure()
     minhr = l[0][1]
     maxhr = l[-1][1]
 
     length = 1.0*(maxhr - minhr)/3
     present = minhr + length
-    print(minhr, maxhr, length, present)
+    # print(minhr, maxhr, length, present)
     maxnum = 0
     maxkey = None
     i = 0
     maxhrList = [-1]
 
     for j in range(0, len(l)):
+    	
         key = l[j]
         hr = key[1]
+        if trace == "ts_0":
+        	print(j, key, hr, present, maxnum, maxkey)
         if hr < present:
             num = len(d[key])
             if (trace, hr-1) in d:
@@ -91,37 +126,20 @@ def do_trace(trace, l, d, num=3):
                 maxnum = num
                 maxkey = key
         else:
-            pList = []
-            sList = []
-            hr = maxkey[1] 
-            maxhrList.append(hr)
-            print(maxkey, d[maxkey])
-            for (p,s) in d[maxkey]:
-                pList.append(p)
-                sList.append(s) 
-            
-            if (trace, hr-1) in d:
-            	print(hr-1, d[(trace, hr-1)])
-                for (p,s) in d[(trace, hr-1)]:
-                    pList.append(p)
-                    sList.append(s) 
-            if (trace, hr+1) in d:
-            	print(hr+1, d[(trace, hr+1)])
-                for (p,s) in d[(trace, hr+1)]:
-                    pList.append(p)
-                    sList.append(s) 
-            print(trace, "num:", maxnum)
-            print("present", present)
-            print("pList", pList)
-            print("sList", sList)
-            plt.plot(pList, sList, marker=mymarkers[i], label=hr)
+            # hr = maxkey[1]
+            (pList, sList) = draw_line(d, maxkey, maxnum, maxhrList, i)
+            plt.plot(pList, sList, marker=mymarkers[i], label=maxkey[1])
             i += 1
-            if i >= num:
-                break
+            print(i)
+            if i >= linenum:
+                break  
             maxnum = len(d[key])
             maxkey = key
             present += length
             
+    if i < linenum:
+    	(pList, sList) = draw_line(d, maxkey, maxnum, maxhrList, i)
+        plt.plot(pList, sList, marker=mymarkers[i], label=maxkey[1])
 
     # plt.plot(pList, sList, marker='*')
     plt.xticks(rotation=45)
@@ -148,11 +166,12 @@ for key in keys:
     elif present == trace:
         pass
     else:
-    	print(trace)
+    	# print(trace)
         do_trace(present, keys[s:i], d)
         s = i
         present = trace
     i += 1
 do_trace(trace, keys[s:i], d)
+print(traceMtvtDict)
 
 
