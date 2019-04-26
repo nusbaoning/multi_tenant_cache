@@ -49,25 +49,32 @@ class SamplePolicy(object):
         presentS = parameters.presentS
         
         plist = get_range(presentP, self.minP, 
-            self.maxP, self.parp[-p+myround-1], self.matrix)
+            self.maxP, self.parp[-self.p+self.myround-1], self.matrix)
         slist = get_range(presentS, self.minS, self.maxS, 
-            self.pars[-p+myround-1], self.matrix)
+            self.pars[-self.p+self.myround-1], self.matrix)
         cost = presentP * presentS
 
         for p in plist:
             for s in slist:
                 if p*s < cost:
                     l.append((p,s))
-        return l                            
+        return l       
+
+    def add_round(self):
+        if self.myround < self.p:            
+            self.myround += 1   
+        else:
+            self.myround = 1                                              
 
 class SampleSSD(object):
     """docstring for SampleSSD"""
-    def __init__(self, p, s):
+    def __init__(self, p, s, ssd):
         self.p = p
         self.s = s
         self.add = {}
         self.minus = {}
-        self.update = 0
+        self.update = ssd.get_update()
+        self.hit = ssd.get_hit()
 
     def is_hit(self, req, rw, hit):
         myhit = hit
@@ -77,6 +84,8 @@ class SampleSSD(object):
         else:
             if req in self.add:
                 myhit = True
+        if myhit:
+            self.hit += 1
         return myhit
 
     def add_update(self):
@@ -111,16 +120,26 @@ class SampleSSD(object):
 
 class SampleSSDs(object):
     """docstring for SampleSSDs"""
-    def __init__(self, parameters):
+    def __init__(self, parameters, ssd):
         self.ssds = []
-        samplePolicy = parameters.samplePolicy
+        self.samplePolicy = parameters.samplePolicy
         l = samplePolicy.getSamples(parameters)
         for (p,s) in l:
-            self.ssds.append(SampleSSD(p,s))
+            self.ssds.append(SampleSSD(p,s,ssd))
     
     def update_cache(self, roll, req, rw, hit, update):
         for ssd in self.ssds:
             ssd.update_cache(roll, req, rw, hit, update)
+
+    def modify_config(self, basehit, hitRange):
+        l = []
+        for ssd in self.ssds:
+            r = 1.0*(ssd.hit-basehit)/basehit
+            if r <= hitRange:
+                l.append((ssd.p*ssd.s, ssd.p, ssd.s))
+        if l==[]:
+            self.samplePolicy.add_round()
+        return l
 
 class Parameters(object):
     """docstring for Parameter"""
@@ -146,6 +165,29 @@ def load_trace(fin):
         reqs.append((reqtype, block))
     return reqs
 
+def update_cache(rw, req, ssd, roll):
+    hit = ssd.is_hit(req)
+    if rw==1 and hit:
+        ssd.add_update()
+    (evicted, update) = ssd.update_cache(req)
+    if update==-1:
+        update=False
+    else:
+        update=True
+    return (hit, update)
+
+def modify_config(samples, ssd, baseline, parameters, log):
+    l = samples.modify_config(baseline.get_hit(), parameters.hitRange)
+    if l != []:
+        l.sort()
+        (cost, p, s) = l[0]
+        ssd.change_p(p)
+        ssd.change_size(s)
+        log.record(cost, p, s)
+    else:
+        log.record(None, None, None)
+
+
 def do_single_trace(traceName, parameters):
 
     #load trace
@@ -156,13 +198,15 @@ def do_single_trace(traceName, parameters):
     #initial
     baseline = PLRU(parameters.size, parameters.p)
     ssd = PLRU(parameters.size, parameters.p)
-    samples = SampleSSDs(parameters)
+    samples = SampleSSDs(parameters, ssd)
     log = Log(parameters)
 
-    for (rw, req) in reqs:        
+    for (rw, req) in reqs:
+        random.seed()
+        roll = random.random()
         #?what about write request?
-        update_cache(req, baseline)
-        update_cache(req, ssd)
+        update_cache(rw, req, baseline, roll)
+        (hit, update) = update_cache(rw, req, ssd, roll)
         samples.update_cache(roll, req, rw, hit, update)
         if log.tick():
             modify_config(samples, ssd, baseline, parameters, log)

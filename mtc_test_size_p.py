@@ -84,7 +84,7 @@ uclnDict = {"netsfs":47949, "mix":195423,
 
 }
 pathDirCam = "/home/trace/ms-cambridge/"
-pathDictHome = "/home/trace/"
+pathDictHome = "/root/bn"
 
 pathDict = {
 "bs24":	"/mnt/raid5/trace/MS-production/BuildServer/Traces/24.hour.BuildServer.11-28-2007.07-24-PM.trace.csv.req",
@@ -118,7 +118,7 @@ def getPath(traceID, typeID):
 
 PERIODNUM = 10
 PERIODLEN = 10 ** 5
-logFilename = "/root/bn/result.csv"
+logFilename = "./mtvt_result.csv"
 # SIZERATE = 0.1
 
 class MyNode(object):
@@ -172,13 +172,13 @@ class PLRU(object):
     def get_size(self):
     	return self.size
 
-    def get_p():
+    def get_p(self):
     	return self.p
 
      #para : block to update
      #function : if hit, move block to head; else, p probabity to update new block
      #return : {evictedBlock, updatedBlock} if updated; None if not
-    def update_cache(self, key):
+    def update_cache(self, key, roll=None):
         # First, see if any value is stored under 'key' in the cache already.
         # If so we are going to replace that value with the new one.
         if key in self.ssd:
@@ -200,8 +200,9 @@ class PLRU(object):
         # tail of the list our conditions are satisfied.
 
         # test p
-        random.seed()
-        roll = random.random()
+        if roll==None:            
+            random.seed()
+            roll = random.random()
         if roll>=self.p:
         	return (None, -1)
 
@@ -435,15 +436,17 @@ def load_file_time(traceID, typeID, sizerate=0.1, p=1):
     print(1.0*ssd.hit/readReq, ssd.update, 1.0*ssd.hit/ssd.update, sep=',', file=logFile)
     logFile.close()
 
-# TRACELIST = ["src2_0", "prn_1", "prxy_0", "hm_0", "proj_3", "usr_0", "wdev_0", "ts_0", "probuild"]
-# PLIST = [0.2, 0.4, 0.6, 0.8, 1]
-# SIZERATELIST = [0.01, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8]
-# traceList = ["wdev_0"]
-# for trace in traceList:
-# 	for sizerate in [0.01, 0.1, 0.4, 0.8]:
-# 		for p in [0.2, 0.6, 1]:
-# 			start = time.clock()
-# 			load_file_time(trace, "cam", sizerate, p)
-# 			end = time.clock()
-# 			print(trace, "cam", sizerate, p, "consumed ", end-start, "s")
-# 			# sys.exit(-1) 
+TRACELIST = ["probuild"]
+pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
+traceList = ["wdev_0", "hm_0", "prn_1", "prxy_0", "proj_3", "src2_0",
+"ts_0", "usr_0"]
+for trace in traceList:
+    for p in pList:
+        for sizerate in sList:
+
+            start = time.clock()
+            load_file(trace, "cam", sizerate, p)
+            end = time.clock()
+            print(trace, "cam", sizerate, p, "consumed ", end-start, "s")
+    		# sys.exit(-1) 
