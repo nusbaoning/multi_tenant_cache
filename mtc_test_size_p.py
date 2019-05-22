@@ -107,14 +107,14 @@ pathDict = {
 
 
 def getPath(traceID, typeID):
-	if typeID == "home":
-		return pathDictHome + pathDict[traceID]
-	if typeID == "cam":
-		return pathDirCam + traceID + ".csv.req"
-	if typeID == "production":
-		return pathDict[traceID]
-	if typeID == "filebench":
-		return "/home/chai/go_filebench-1.4.8.fsl.0.8/workloads/" + traceID + "/test1_short.txt.req"
+    if typeID == "home":
+        return pathDictHome + pathDict[traceID]
+    if typeID == "cam":
+        return pathDirCam + traceID + ".csv.req"
+    if typeID == "production":
+        return pathDict[traceID]
+    if typeID == "filebench":
+        return "/home/chai/go_filebench-1.4.8.fsl.0.8/workloads/" + traceID + "/test1_short.txt.req"
 
 PERIODNUM = 10
 PERIODLEN = 10 ** 5
@@ -370,37 +370,43 @@ class PLRU(object):
             node = node.prev
 		
 
+# mode = 'w', deal with write reqs
+# mode = 'r', ignore write reqs
+def load_file(traceID, typeID, sizerate=0.1, p=1, mode='w'):
+    readReq = 0
+    size = int(sizerate*uclnDict[traceID])
+    ssd = PLRU(size, p)
+    fin = open(getPath(traceID, typeID), 'r')
+    lines = fin.readlines()
+    req = 0
+    print("load file finished")
+    for line in lines:
+        items = line.split(' ')
+        reqtype = int(items[0])
+        block = int(items[2])
+        if mode == 'r':
+            if reqtype == 1:			
+                ssd.delete_cache(block)
+            else:		
+                if readReq % 1000000 == 0:
+                    print(readReq)
+                req += 1
+                ssd.is_hit(block)				
+                ssd.update_cache(block)
+        else:
+            req += 1
+            hit = ssd.is_hit(block)
+            if reqtype == 1 and hit:
+                ssd.add_update()
+            ssd.update_cache(block)
+    fin.close()
+    print("size", size, p)
+    print("total hit rate", 1.0*ssd.hit/req, ssd.update)
+    logFile = open(logFilename, "a")
+    print(traceID, p, sizerate, size, 1.0*ssd.hit/req, ssd.update, sep=',', file=logFile)
+    logFile.close()
 
-def load_file(traceID, typeID, sizerate=0.1, p=1):
-	readReq = 0
-	# print(traceID)
-
-	size = int(sizerate*uclnDict[traceID])
-	# print(sizerate*uclnDict[traceID], size)
-	ssd = PLRU(size, p)
-	fin = open(getPath(traceID, typeID), 'r')
-	lines = fin.readlines()
-	print("load file finished")
-	for line in lines:
-		items = line.split(' ')
-		reqtype = int(items[0])
-		block = int(items[2])
-		if reqtype == 1:			
-			ssd.delete_cache(block)
-		else:		
-			if readReq % 1000000 == 0:
-				print(readReq)
-			readReq += 1
-			ssd.is_hit(block)				
-			ssd.update_cache(block)
-	fin.close()
-	print("size", size, p)
-	print("total hit rate", 1.0*ssd.hit/readReq, ssd.update)
-	logFile = open(logFilename, "a")
-	print(traceID, p, sizerate, size, 1.0*ssd.hit/readReq, ssd.update, sep=',', file=logFile)
-	logFile.close()
-
-
+# calculate hit ratios of every period
 def load_file_time(traceID, typeID, sizerate=0.1, p=1):
     readReq = 0
     # print(traceID)
@@ -436,17 +442,36 @@ def load_file_time(traceID, typeID, sizerate=0.1, p=1):
     print(1.0*ssd.hit/readReq, ssd.update, 1.0*ssd.hit/ssd.update, sep=',', file=logFile)
     logFile.close()
 
-TRACELIST = ["probuild"]
-pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
-sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
-traceList = ["wdev_0", "hm_0", "prn_1", "prxy_0", "proj_3", "src2_0",
-"ts_0", "usr_0"]
-for trace in traceList:
-    for p in pList:
-        for sizerate in sList:
+def load_metadata_dict(filename="metadata.csv"):
+    fin = open(filename, 'r')
+    lines = fin.readlines()
+    
+    for line in lines:
+        line = line.strip().split(',')
+        traceID = line[0]
+        ucln = int(line[9])
+        uclnDict[traceID] = ucln
+    
+uclnDict = {}
+load_metadata_dict()
+# print(uclnDict)
+# print(len(uclnDict))
+l = uclnDict.items()
+l.sort(key=lambda x:(x[1],x[0]))
+for (trace, ucln) in l:
+    print(trace)
+    load_file(trace, "cam", 0.1, 1, 'w')
+# TRACELIST = ["probuild"]
+# pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
+# sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
+# traceList = ["wdev_0", "hm_0", "prn_1", "prxy_0", "proj_3", "src2_0",
+# "ts_0", "usr_0"]
+# for trace in traceList:
+#     for p in pList:
+#         for sizerate in sList:
 
-            start = time.clock()
-            load_file(trace, "cam", sizerate, p)
-            end = time.clock()
-            print(trace, "cam", sizerate, p, "consumed ", end-start, "s")
-    		# sys.exit(-1) 
+#             start = time.clock()
+#             load_file(trace, "cam", sizerate, p)
+#             end = time.clock()
+#             print(trace, "cam", sizerate, p, "consumed ", end-start, "s")
+#     		# sys.exit(-1) 
