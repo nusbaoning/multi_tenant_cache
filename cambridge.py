@@ -4,14 +4,22 @@ import sys
 import os
 import time
 
-
+uclnDict = {"usr_1": 172674631, 
+"prxy_0": 230657,
+"web_0": 1915690}
 
 
 log = "/root/bn/metadata.csv"
 logFile = open(log, "a")
+danwei = 10**7
+
 
 # order starts from 0
-def handle_csv_time(fileid, filename, order, time):
+# only deal with continuous case 
+# in warm mode, try not to use negative order or too big order
+# it will take long time to really replace the cache
+def handle_csv_time(fileid, filename, order, time, pattern, ssd, fileIdx):
+    print("enter handle_csv_time", fileid, order, time, fileIdx)
     block_size = 4096
     flag=False
     readcount=1
@@ -19,21 +27,46 @@ def handle_csv_time(fileid, filename, order, time):
     readsize = 1
     writesize = 1
     # outname = filename +'.req'
-    count = 0
+    count = fileIdx
     totalDict = {}
     readDict = {}
     writeDict = {}
     lba=[[sys.maxsize,0], [sys.maxsize,0], [sys.maxsize,0]]
     infile = open(filename, 'r')
     # outfile = open(outname, 'w')
+    nrreq = 0
     lines = infile.readlines()
-    line = lines[0]
+    if pattern=="warm":
+        if fileIdx == 0:
+            timeStart = -1
+            timeEnd = 10**25
+        else:
+            line = lines[fileIdx]
+            line = line.strip().split(',')
+            timeBase = int(line[0])
+            timeStart = timeBase + order * time
+            timeEnd = timeStart + time
+        if ssd == None:
+            ssd = PLRU(int(0.1 * uclnDict[fileid]), 1)
+            oldhit = -1
+            oldupdate = -1
+        else:
+            oldhit = ssd.hit
+            oldupdate = ssd.update
+    
+    if order < 0  and fileIdx == 0:
+        line = lines[-1]
+    else:
+        line = lines[fileIdx]
     line = line.strip().split(',')
     timeBase = int(line[0])
-    timeStart = timeBase + order * time
+    if fileIdx > 0:
+        timeStart = timeBase
+    else:
+        timeStart = timeBase + order * time
     timeEnd = timeStart + time
-    # print(timeBase, timeStart, timeEnd)
-    for line in lines:
+    print("time", timeBase/danwei, timeStart/danwei, timeEnd/danwei)
+    for line in lines[fileIdx:]:
         count += 1
         line = line.strip().split(',')
         timestamp = int(line[0])
@@ -42,6 +75,10 @@ def handle_csv_time(fileid, filename, order, time):
             continue
         elif timestamp > timeEnd:
             break
+        # first coming
+        if not flag:
+            lineStart = count
+            flag = True
         block_id = int((float(line[4]))/block_size)
         block_end = int((float(line[4])+float(line[5])-1)/block_size)
         if count % 100000 == 0:
@@ -73,42 +110,65 @@ def handle_csv_time(fileid, filename, order, time):
                 readDict[i] = True
             elif rw == 1:
                 writeDict[i] = True
-
-    print("read write", readcount, writecount, readcount/writecount, readsize, writesize, readsize/writesize, sep=',')
-    print("ucln", len(totalDict), len(readDict), len(writeDict), 
-        lba[2][1]-lba[2][0]+1, lba[0][1]-lba[0][0]+1, lba[1][1]-lba[1][0]+1, sep=',')
-    print(fileid, order, time, readcount+writecount, readcount, writecount, round(readcount/writecount, 2), 
-        readsize+writesize, readsize, writesize, round(readsize/writesize, 2), 
-        len(totalDict), len(readDict), len(writeDict), 
-        lba[2][1]-lba[2][0]+1, lba[0][1]-lba[0][0]+1, lba[1][1]-lba[1][0]+1, sep=',', end=',', file=logFile)
+            if pattern == "warm":
+                nrreq += 1
+                hit = ssd.is_hit(i)
+                if line[3]=='Write' and hit:
+                    ssd.add_update()
+                ssd.update_cache(i)
+        if pattern == "warm" and oldhit<0 and ssd.is_full():
+            timeBase = timestamp
+            timeStart = timeBase + order * time
+            timeEnd = timeStart + time
+            nrreq = 0
+            ssd.oldhit = ssd.hit
+            ssd.oldupdate = ssd.update
+            readsize = 0
+            writesize = 0
+            flag = False
+    # print("read write", readcount, writecount, readcount/writecount, readsize, writesize, readsize/writesize, sep=',')
+    # print("ucln", len(totalDict), len(readDict), len(writeDict), 
+        # lba[2][1]-lba[2][0]+1, lba[0][1]-lba[0][0]+1, lba[1][1]-lba[1][0]+1, sep=',')
+    lineStop = count
+    print(fileid, pattern, order, time/danwei,  
+        readsize, writesize, round(1.0*readsize/(readsize+writesize), 2), 
+        sep=',', end=',', file=logFile)
     infile.close()
     # outfile.close()
+    if pattern!="warm":
+        nrreq = 0
+        assert len(totalDict)>0
+        ssd = PLRU(int(0.1 * len(totalDict)), 1)
+        infile = open(filename, 'r')
+        # outfile = open(outname, 'w')
+        lines = infile.readlines()
+        for line in lines[lineStart-1: lineStop]:
+            line = line.strip().split(',')
+            timestamp = int(line[0])
+            # if timestamp < timeStart:
+            #     continue
+            # elif timestamp > timeEnd:
+            #     break
+            block_id = int((float(line[4]))/block_size)
+            block_end = int((float(line[4])+float(line[5])-1)/block_size)
+            if count % 100000 == 0:
+                print(count)
+            for req in range(block_id, block_end+1):
+                nrreq += 1
+                hit = ssd.is_hit(req)
+                if line[3]=='Write' and hit:
+                    ssd.add_update()
+                ssd.update_cache(req)
+        hit = ssd.hit
+        update = ssd.update
+    else:
+        hit = ssd.hit - oldhit
+        update = ssd.update - oldupdate
 
-    ssd = PLRU(int(0.1 * len(totalDict)), 1)
-    infile = open(filename, 'r')
-    # outfile = open(outname, 'w')
-    lines = infile.readlines()
-    nrreq = 0
-    for line in lines:
-        count += 1
-        line = line.strip().split(',')
-        timestamp = int(line[0])
-        if timestamp < timeStart:
-            continue
-        elif timestamp > timeEnd:
-            break
-        block_id = int((float(line[4]))/block_size)
-        block_end = int((float(line[4])+float(line[5])-1)/block_size)
-        if count % 100000 == 0:
-            print(count)
-        for req in range(block_id, block_end+1):
-            nrreq += 1
-            hit = ssd.is_hit(req)
-            if line[3]=='Write' and hit:
-                ssd.add_update()
-            ssd.update_cache(req)
-    print(1.0*ssd.hit/nrreq, ssd.update, file=logFile)
-            
+    print(fileid, hit, nrreq, 1.0*hit/nrreq, update)
+    print(nrreq, ssd.size, hit, 1.0*hit/nrreq, update, sep=',', file=logFile)
+    logFile.flush()
+    return (ssd, count)
 
 def handle_csv(fileid, filename):
     block_size = 4096
@@ -225,19 +285,33 @@ def handle_req(fileid, filename):
         lba[2][1]-lba[2][0]+1, lba[0][1]-lba[0][0]+1, lba[1][1]-lba[1][0]+1, sep=',', file=logFile)
     fin.close()
 
-
-# l = ["src2_0"]
+l = ["usr_1"] 
+# l = ["usr_1", "prxy_0", "web_0" ]
 # l = ["prn_1", "prxy_0", "hm_0", "proj_3", "usr_0", "ts_0", "wdev_0"]
-for root, dirs, files in os.walk('/home/trace/ms-cambridge'):  
+# for root, dirs, files in os.walk('/home/trace/ms-cambridge'):  
 # for i in l:
-    for file in files:
-        idx = file.index('.')
-        i = file[:idx]
-        start = time.clock()
-        handle_csv(i, "/home/trace/ms-cambridge/" + i + ".csv")
-        # handle_csv_time(i, "/home/trace/ms-cambridge/" + i + ".csv", 0, 3600*10000000)            
-        end = time.clock()
-        print("consumed ", end-start, "s")
+mode = "warm"
+for i in l:
+    ssd_stored = None
+    fileIdx_stored = 0
+    # 1s, 1h, 1day
+    for timeLength in [60*danwei, 3600*danwei, 24*3600*danwei]:
+        if mode=="warm":
+            ssd = ssd_stored
+            fileIdx = fileIdx_stored
+        else:
+            ssd = None
+            fileIdx = 0
+        for order in range(0, 5):
+            start = time.clock()
+            (ssd, fileIdx) = handle_csv_time(i, "/home/trace/ms-cambridge/" + i + ".csv", 
+                order, timeLength, "warm", ssd, fileIdx)
+            if ssd_stored==None:
+                ssd_stored = ssd
+                fileIdx_stored = fileIdx
+    # handle_csv_time(i, "/home/trace/ms-cambridge/" + i + ".csv", 0, 3600*10000000)            
+            end = time.clock()
+            print(i, order, timeLength/danwei, start, end, "consumed ", end-start, "s")
                  
                  
 # handle_req("probuild", "/home/trace/" + "production-build00-1-4K.req")

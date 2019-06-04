@@ -142,6 +142,29 @@ class PLRU(object):
         self.listSize = 1
         # Adjust the size
         self.change_size(size)
+
+    def copy(self, ssd):
+        self.hit = ssd.hit
+        self.update = ssd.update
+        self.size = ssd.size
+        self.ssd = ssd.ssd.copy()
+        self.head = MyNode()
+        node = self.head
+        copynode = ssd.head
+        for i in range(0, self.size-1):
+            node.empty = copynode.empty
+            if not node.empty:
+                node.key = copynode.key
+            newnode = MyNode()
+            node.next = newnode
+            newnode.prev = node
+            node = node.next
+            copynode = copynode.next
+        node.next = self.head
+        self.head.prev = node
+        self.p = ssd.p
+        self.listSize = ssd.listSize
+
     def __len__(self):
         return len(self.ssd)
 
@@ -215,6 +238,7 @@ class PLRU(object):
         self.update += 1
         node = self.head.prev
         oldKey = None
+        print(node.empty)
         # If the node already contains something we need to remove the old
         # key from the dictionary.
         if not node.empty:
@@ -309,6 +333,7 @@ class PLRU(object):
     # Decreases the size of the list by removing n nodes from the tail of the
     # list.
     def remove_tail_node(self, n):
+        # print("tag", self.listSize, n)
         assert self.listSize > n
         l = []
         for i in range(n):
@@ -368,7 +393,11 @@ class PLRU(object):
             self.update_cache(node.key)
             # print(node.key)
             node = node.prev
-		
+
+    def is_full(self):
+        if(len(self.ssd) >= self.size):
+            return True
+        return False
 
 # mode = 'w', deal with write reqs
 # mode = 'r', ignore write reqs
@@ -452,15 +481,15 @@ def load_metadata_dict(filename="metadata.csv"):
         ucln = int(line[9])
         uclnDict[traceID] = ucln
     
-uclnDict = {}
-load_metadata_dict()
-# print(uclnDict)
-# print(len(uclnDict))
-l = uclnDict.items()
-l.sort(key=lambda x:(x[1],x[0]))
-for (trace, ucln) in l:
-    print(trace)
-    load_file(trace, "cam", 0.1, 1, 'w')
+# uclnDict = {}
+# load_metadata_dict()
+# # print(uclnDict)
+# # print(len(uclnDict))
+# l = uclnDict.items()
+# l.sort(key=lambda x:(x[1],x[0]))
+# for (trace, ucln) in l:
+#     print(trace)
+#     load_file(trace, "cam", 0.1, 1, 'w')
 # TRACELIST = ["probuild"]
 # pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
 # sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
