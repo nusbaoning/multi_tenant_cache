@@ -1,5 +1,5 @@
 from __future__ import print_function
-from mtc_test_size_p import PLRU
+from cache_algorithm import PLRU
 import sys
 import os
 import time
@@ -12,7 +12,88 @@ uclnDict = {"usr_1": 172674631,
 log = "/root/bn/metadata.csv"
 logFile = open(log, "a")
 danwei = 10**7
+block_size = 4096
 
+
+def get_time(line):
+    line = line.strip().split(',')
+    time = int(line[0])
+    return time
+
+# given lines and the filename to write
+# output req with timestamp, the format is timestamp, rw, line[2], req
+# output metadata and also the uclndict at last
+def handle_lines(filename, lines, timeZero):
+    print("enter handle_lines", filename)
+    start = time.clock()
+    flag=False
+    readcount=0
+    writecount=0   
+    readsize = 0
+    writesize = 0
+    totalDict = {}
+    readDict = {}
+    writeDict = {}
+    nrreq = 0
+    outfile = open(filename, 'w')
+    for line in lines:
+        line = line.strip().split(',')
+        timestamp = int(line[0])-timeZero
+        block_id = int((float(line[4]))/block_size)
+        block_end = int((float(line[4])+float(line[5])-1)/block_size)
+        # if count % 100000 == 0:
+        #     print(count)
+        if line[3]=='Write':
+            rw = 1
+            writecount += 1
+            writesize+=block_end-block_id+1
+        elif line[3]=='Read':
+            rw = 0
+            readcount+=1
+            readsize+=block_end-block_id+1
+        else:
+            rw = 2
+        for i in range(block_id,block_end+1):
+            nrreq += 1
+            print('{0} {1} {2} {3}'.format(timestamp,rw,line[2],i),file=outfile)
+            # print>>outfile, '{0} {1} {2}'.format(rw,line[2],i)
+            totalDict[i] = True            
+            if rw == 0:
+                readDict[i] = True
+            elif rw == 1:
+                writeDict[i] = True
+    print(len(totalDict), len(readDict), len(writeDict), nrreq, readcount, writecount, file=outfile)
+    print(totalDict, file=outfile)
+    outfile.close()
+    end = time.clock()
+    print("consumed", end-start, "s", filename)
+
+def handle_csv_time_partition(fileid, filename, timeLength):
+    infile = open(filename, 'r')
+    lines = infile.readlines()
+    # cut the lines
+    line = lines[0]
+    timeStart =  get_time(line)
+    timeZero = timeStart
+    idxStart = 0
+    timeEnd = timeStart + timeLength*danwei
+    print(len(lines), get_time(lines[-1]))
+    nrpar = 0
+    for i in range(0, len(lines)):
+        time = get_time(lines[i])
+        # if i%100000==0:
+        #     print(i, time/danwei)
+        if time >= timeEnd:
+            nrpar += 1
+            pfn = "/home/trace/ms-cambridge/part/" + fileid + "_" + str(nrpar) + ".req"
+            handle_lines(pfn, lines[idxStart:i], timeZero)
+            idxStart = i
+            timeStart += timeLength*danwei
+            timeEnd += timeLength*danwei
+            # print(i, timeStart/danwei, timeEnd/danwei)
+    pfn = "/home/trace/ms-cambridge/part/" + fileid + "_" + str(nrpar) + ".req"
+    handle_lines(pfn, lines[idxStart:], timeZero)
+    infile.close()
 
 # order starts from 0
 # only deal with continuous case 
@@ -20,7 +101,6 @@ danwei = 10**7
 # it will take long time to really replace the cache
 def handle_csv_time(fileid, filename, order, time, pattern, ssd, fileIdx):
     print("enter handle_csv_time", fileid, order, time, fileIdx)
-    block_size = 4096
     flag=False
     readcount=1
     writecount=1   
@@ -42,8 +122,7 @@ def handle_csv_time(fileid, filename, order, time, pattern, ssd, fileIdx):
             timeEnd = 10**25
         else:
             line = lines[fileIdx]
-            line = line.strip().split(',')
-            timeBase = int(line[0])
+            timeBase = get_time(line)
             timeStart = timeBase + order * time
             timeEnd = timeStart + time
         if ssd == None:
@@ -53,18 +132,18 @@ def handle_csv_time(fileid, filename, order, time, pattern, ssd, fileIdx):
         else:
             oldhit = ssd.hit
             oldupdate = ssd.update
-    
-    if order < 0  and fileIdx == 0:
-        line = lines[-1]
     else:
-        line = lines[fileIdx]
-    line = line.strip().split(',')
-    timeBase = int(line[0])
-    if fileIdx > 0:
-        timeStart = timeBase
-    else:
-        timeStart = timeBase + order * time
-    timeEnd = timeStart + time
+        if order < 0  and fileIdx == 0:
+            line = lines[-1]
+        else:
+            line = lines[fileIdx]
+        line = line.strip().split(',')
+        timeBase = int(line[0])
+        if fileIdx > 0:
+            timeStart = timeBase
+        else:
+            timeStart = timeBase + order * time
+        timeEnd = timeStart + time
     print("time", timeBase/danwei, timeStart/danwei, timeEnd/danwei)
     for line in lines[fileIdx:]:
         count += 1
@@ -81,8 +160,8 @@ def handle_csv_time(fileid, filename, order, time, pattern, ssd, fileIdx):
             flag = True
         block_id = int((float(line[4]))/block_size)
         block_end = int((float(line[4])+float(line[5])-1)/block_size)
-        if count % 100000 == 0:
-            print(count)
+        # if count % 100000 == 0:
+        #     print(count)
         if line[3]=='Write':
             rw = 1
             writecount += 1
@@ -285,34 +364,41 @@ def handle_req(fileid, filename):
         lba[2][1]-lba[2][0]+1, lba[0][1]-lba[0][0]+1, lba[1][1]-lba[1][0]+1, sep=',', file=logFile)
     fin.close()
 
-l = ["usr_1"] 
-# l = ["usr_1", "prxy_0", "web_0" ]
+# l = ["usr_1"] 
+l = ["usr_1", "prxy_0", "web_0" ]
 # l = ["prn_1", "prxy_0", "hm_0", "proj_3", "usr_0", "ts_0", "wdev_0"]
 # for root, dirs, files in os.walk('/home/trace/ms-cambridge'):  
 # for i in l:
-mode = "warm"
+# mode = "warm"
+# for i in l:
+#     # need to write a method to copy the context of ssd!
+#     ssd_stored = None
+#     fileIdx_stored = 0
+#     # 1s, 1h, 1day
+#     for timeLength in [60*danwei, 3600*danwei, 24*3600*danwei]:
+#         if mode=="warm":
+#             if ssd_stored != None:
+#                 ssd = PLRU(1,1)
+#                 ssd.copy(ssd_stored)
+#             else:
+#                 ssd = None
+#             fileIdx = fileIdx_stored
+#         else:
+#             ssd = None
+#             fileIdx = 0
+#         for order in range(0, 5):
+#             start = time.clock()
+#             (ssd, fileIdx) = handle_csv_time(i, "/home/trace/ms-cambridge/" + i + ".csv", 
+#                 order, timeLength, mode, ssd, fileIdx)
+#             if ssd_stored==None:
+#                 ssd_stored = PLRU(1,1)
+#                 ssd_stored.copy(ssd)
+#                 fileIdx_stored = fileIdx
+#     # handle_csv_time(i, "/home/trace/ms-cambridge/" + i + ".csv", 0, 3600*10000000)            
+#             end = time.clock()
+#             print(i, order, timeLength/danwei, start, end, "consumed ", end-start, "s")
 for i in l:
-    ssd_stored = None
-    fileIdx_stored = 0
-    # 1s, 1h, 1day
-    for timeLength in [60*danwei, 3600*danwei, 24*3600*danwei]:
-        if mode=="warm":
-            ssd = ssd_stored
-            fileIdx = fileIdx_stored
-        else:
-            ssd = None
-            fileIdx = 0
-        for order in range(0, 5):
-            start = time.clock()
-            (ssd, fileIdx) = handle_csv_time(i, "/home/trace/ms-cambridge/" + i + ".csv", 
-                order, timeLength, "warm", ssd, fileIdx)
-            if ssd_stored==None:
-                ssd_stored = ssd
-                fileIdx_stored = fileIdx
-    # handle_csv_time(i, "/home/trace/ms-cambridge/" + i + ".csv", 0, 3600*10000000)            
-            end = time.clock()
-            print(i, order, timeLength/danwei, start, end, "consumed ", end-start, "s")
-                 
+    handle_csv_time_partition(i, "/home/trace/ms-cambridge/" + i + ".csv", 3600)                 
                  
 # handle_req("probuild", "/home/trace/" + "production-build00-1-4K.req")
 # logFile.close()
