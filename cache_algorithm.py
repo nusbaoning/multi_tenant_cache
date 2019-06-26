@@ -22,27 +22,27 @@ class PLRU(object):
         # Adjust the size
         self.change_size(size)
 
-    def copy(self, ssd):
+    def copy(self, ssd, size=None, p=None):
         self.hit = ssd.hit
         self.update = ssd.update
-        self.size = ssd.size
+        if size == None:
+            self.size = ssd.size
+            self.p = ssd.p
+        else:
+            self.size = size
+            self.p = p
+        self.change_size(self.size)
         self.ssd = ssd.ssd.copy()
-        self.head = MyNode()
         node = self.head
         copynode = ssd.head
-        for i in range(0, self.size-1):
+        for i in range(0, min(self.size, ssd.size)-1):
+            if copynode.empty==True:
+                break
             node.empty = copynode.empty
-            if not node.empty:
-                node.key = copynode.key
-            newnode = MyNode()
-            node.next = newnode
-            newnode.prev = node
+            node.key = copynode.key
             node = node.next
             copynode = copynode.next
-        node.next = self.head
-        self.head.prev = node
-        self.p = ssd.p
-        self.listSize = ssd.listSize
+        self.listSize = self.size
 
     def __len__(self):
         return len(self.ssd)
@@ -89,7 +89,7 @@ class PLRU(object):
             # Update the list ordering.
             self.mtf(node)
             self.head = node
-            return (None, None)
+            return (None, -1)
 
         # Ok, no value is currently stored under 'key' in the cache. We need
         # to choose a node to place the new item in. There are two cases. If

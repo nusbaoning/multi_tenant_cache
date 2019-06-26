@@ -17,12 +17,19 @@ def load_lines(trace, ttl, ul, s, lines):
         fp.close()
 
 
-def parse_line(line):
+def parse_line(line, mode):
     items = line.split(',')
-    time = int(items[0])
-    rw = int(items[1])
+    if mode=="gen":
+        time = int(items[0])
+        rw = int(items[1])
+        blkid = int(items[3])
+        return (time, rw, blkid)
+    # trace, time, rw, blkid
+    trace = items[0]
+    time = int(items[1])
+    rw = int(items[2])
     blkid = int(items[3])
-    return (time, rw, blkid)
+    return (trace, time, rw, blkid)
 
 # assume that unit length is 1s and do not need to mix inside a unit
 def generate_reqs(traces, totalTimeLength, unitLength, start):
@@ -41,7 +48,7 @@ def generate_reqs(traces, totalTimeLength, unitLength, start):
     while True:
         for i in range(len(traces)):
             while True:
-                (time, rw, blkid) = parse_line(lines[i][idxlist[i]])
+                (time, rw, blkid) = parse_line(lines[i][idxlist[i]], "gen")
                 if time > timeUnitEnd:
                     break
                 print(trace, time, rw, blkid, file=logfile)
@@ -51,33 +58,40 @@ def generate_reqs(traces, totalTimeLength, unitLength, start):
             break
     logfile.close()
         
-        
+def get_reqs(traces, totalTimeLength, unitLength):
+    filename = path + "mix" + "_" + str(len(traces)) + ".req"
+    fp = open(filename, 'r')
+    lines = fp.readlines()
+    return lines
 
-generate_reqs(traces, totalTimeLength, unitLength)
+generate_reqs(traces, totalTimeLength, unitLength, start)
 
 # init
 cacheDict = {}
 for trace in traces:
     cache = Cache(trace, size, p, policy)
     cacheDict[trace] = cache
-device = Device(size, k)
+# g=tbw/lifespan/capacity
+device = Device(size, g, cacheDict)
 periodStart = 0
 
-for i in range(0,math.ceil(totalTimeLength/unitLength)):
-    reqs = get_reqs(traces, i)
-    for req in reqs:
-        (trace, time, rw, blkid) = req
-        (needInmediateM, mode, quant) = cacheDict[trace].do_req(rw, blkid)
-        if needInmediateM:
-            device.try_modify(mode, quant) 
-        if time - periodStart >= periodLength:
-            periodStart = time
-            potentials = []
-            for trace in traces:
-                potentials.append(cacheDict[trace].get_potential())
-            result = device.get_best_config(potentials)
-            for i in (0, len(traces)):
-                cacheDict[traces[i]].modify_config(result[i])
+reqs = get_reqs(traces, totalTimeLength, unitLength)
+    
+for req in reqs:
+    (trace, time, rw, blkid) = parse_line(req, "get")
+    (needInmediateM, scheme1, scheme2) = cacheDict[trace].do_req(rw, blkid)
+    if needInmediateM:
+        (s, p) = device.try_modify(scheme1, scheme2)
+        cacheDict[trace].change_config(s, p) 
+    if time - periodStart >= periodLength:
+        periodStart = time
+        potentials = []
+        for trace in traces:
+            potentials.append(cacheDict[trace].get_potential())
+        result = device.get_best_config(potentials)
+        for i in (0, len(traces)):
+            cacheDict[traces[i]].change_config(result[i].size, result[i].p)
+            cacheDict[trace[i]].init_samples()
 
 write = get_total_write(cacheDict)
 cost = device.get_cost(time, write)
