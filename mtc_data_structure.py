@@ -1,5 +1,6 @@
 from cache_algorithm import PLRU
 import random
+danwei = 10**7
 
 # assume that the cache is larger than time period 
 # the evict result of potentials are the same as original cache when evict
@@ -74,7 +75,7 @@ class SampleCache(object):
 def is_valid_sp(sizeRatio, p):
     if p > 1 or p <= 0:
         return False
-    if s > 0.8 or s < 0.1:
+    if sizeRatio > 0.8 or sizeRatio < 0.1:
         return False
     return True
 
@@ -82,10 +83,10 @@ def is_valid_sp(sizeRatio, p):
 
 class Device(object):
     """docstring for Device"""
-    def get_total_size(cacheDict):
+    def get_total_size(self):
         s = 0
-        for trace in cacheDict:
-            cache = cacheDict[trace]
+        for trace in self.cacheDict:
+            cache = self.cacheDict[trace]
             s += cache.cache.size
         return s
 
@@ -93,7 +94,7 @@ class Device(object):
         self.size = size
         self.g = g
         self.cacheDict = cacheDict
-        self.usedSize = get_total_size(cacheDict)
+        self.usedSize = self.get_total_size()
 
     def get_cost(self, write, time):
         if write > self.size * self.g * time:
@@ -145,38 +146,40 @@ class Cache(object):
     """docstring for Cache"""
     def __init__(self, trace, sizeRatio, ucln, p, policy):
         self.trace = trace
-        # self.sizeRatio = sizeRatio
+        self.cacheSizeRatio = sizeRatio
         # self.p = p
         self.ucln = ucln
         # policy = nrsamples, hit throt, +-s, +-p
         self.policy = policy
         self.baseline = PLRU(int(sizeRatio*ucln), p)
         self.cache = PLRU(int(sizeRatio*ucln), p)
+        self.req = 0
         self.init_samples()
 
     def init_samples(self):
         self.samples = []
-        for i in range(self.policy.nrsamples):
-            for j in range(self.policy.nrsamples):
+        for i in range(self.policy["nrsamples"]):
+            for j in range(self.policy["nrsamples"]):
                 if i == 0 and j == 0:
                     continue
-                sizeRatio = self.cache.sizeRatio + i * policy.deltas
-                p = self.cache.p + j * policy.deltap
+                sizeRatio = self.cacheSizeRatio + i * self.policy["deltas"]
+                p = self.cache.p + j * self.policy["deltap"]
                 if is_valid_sp(sizeRatio, p):
-                    s = PLRU(int(sizeRatio*ucln), p)
+                    s = PLRU(int(sizeRatio*self.ucln), p)
                     s.copy(self.cache)
                     s.update = 0
                     self.samples.append(s)
-                sizeRatio = self.cache.sizeRatio - i * policy.deltas
-                p = self.cache.p - j * policy.deltap
+                sizeRatio = self.cacheSizeRatio - i * self.policy["deltas"]
+                p = self.cache.p - j * self.policy["deltap"]
                 if is_valid_sp(sizeRatio, p):
-                    s = PLRU(int(sizeRatio*ucln), p)
+                    s = PLRU(int(sizeRatio*self.ucln), p)
                     s.copy(self.cache)
                     s.update = 0
                     self.samples.append(s)
         
     def do_req_help(cache, rw, blkid, roll):
-        hit = ssd.is_hit(req)
+        self.req += 1
+        hit = cache.is_hit(req)
         if rw==1 and hit:
             cache.add_update()
         (evicted, update) = cache.update_cache(req, roll)
@@ -193,8 +196,8 @@ class Cache(object):
 
     def exceed_throt(hit):
         baseline = self.baseline.get_hit()
-        h = (hit - baseline)/baseline
-        if h > self.policy.throt:
+        h = (hit - baseline)/self.req
+        if h > self.policy["throt"]:
             return True
         return False
 
@@ -205,9 +208,9 @@ class Cache(object):
         pt1 = None
         pt2 = None
         for pt in self.potentials:
-            if pt.size == size and pt.p==p+self.policy.deltap:
+            if pt.size == size and pt.p==p+self.policy["deltap"]:
                 pt1 = pt
-            elif pt.size == size+self.policy.deltas and pt.p == p:
+            elif pt.size == size+self.policy["deltas"] and pt.p == p:
                 pt2 = pt
             if pt1!=None and pt2!=None:
                 return (pt1, pt2)
@@ -231,6 +234,7 @@ class Cache(object):
     def change_config(self, s, p):
         self.cache.change_size(s)
         self.cache.change_p(p)
+        self.cacheSizeRatio = round(s/self.ucln, 1)
     
     # give potentials inside the hit range
     # remove bad ones (both s and p are larger)
