@@ -6,6 +6,12 @@ class MyNode(object):
     def __init__(self):
         self.empty = True
 
+    def print(self):
+        if self.empty:            
+            print(self.empty)
+        else:
+            print(self.empty, self.key)
+
 class PLRU(object):
     """docstring for LRU"""
     def __init__(self, size, p):
@@ -28,22 +34,35 @@ class PLRU(object):
         self.update = ssd.update
         if size == None:
             self.size = ssd.size
-            self.p = ssd.p
         else:
             self.size = size
+        if p == None:
+            self.p = ssd.p
+        else:
             self.p = p
+        # print("size=", self.size)
         self.change_size(self.size)
-        self.ssd = ssd.ssd.copy()
         node = self.head
         copynode = ssd.head
-        for i in range(0, min(self.size, ssd.size)-1):
+        for i in range(0, min(self.size, ssd.size)):
             if copynode.empty==True:
                 break
             node.empty = copynode.empty
             node.key = copynode.key
+            self.ssd[node.key] = node
             node = node.next
             copynode = copynode.next
         self.listSize = self.size
+        # print("hit=", self.hit, "update=", self.update)
+        # print(self.size)
+        # print(self.ssd)
+        # print("p=", self.p)
+        # print(ssd.ssd)
+        # node = self.head
+        # for i in range(self.size):
+        #     print(node)
+        #     node.print()
+        #     node = node.next
 
     def __len__(self):
         return len(self.ssd)
@@ -82,16 +101,20 @@ class PLRU(object):
      #function : if hit, move block to head; else, p probabity to update new block
      #return : {evictedBlock, updatedBlock} if updated; None if not
     def update_cache(self, key, roll=None):
+        # if roll==-1:
+        #     print(self.size, key)
         # First, see if any value is stored under 'key' in the cache already.
         # If so we are going to replace that value with the new one.
         if key in self.ssd:
+            # if roll==-1:
+            #     print("hit?")
             # Lookup the node
             node = self.ssd[key]
             # Update the list ordering.
-            self.mtf(node)
+            self.mtf(node, roll)
             self.head = node
             return (None, -1)
-
+        
         # Ok, no value is currently stored under 'key' in the cache. We need
         # to choose a node to place the new item in. There are two cases. If
         # the cache is full some item will have to be pushed out of the
@@ -107,16 +130,20 @@ class PLRU(object):
             random.seed()
             roll = random.random()
         if roll>=self.p:
+            # print(roll, self.p, roll>=self.p)
             return (None, -1)
-
+        
+        # if roll==-1:
+        #     print("test p")
         # Since the list is circular, the tail node directly preceeds the
         # 'head' node.
 
-
-
-
+    
         self.update += 1
         node = self.head.prev
+        if roll == -1:
+            self.head.print()
+            node.print()
         oldKey = None
         # print(node.empty)
         # If the node already contains something we need to remove the old
@@ -167,16 +194,39 @@ class PLRU(object):
     # 'node' directly precedes the 'head' node. Because of the order of
     # operations, if 'node' already directly precedes the 'head' node or if
     # 'node' is the 'head' node the order of the list will be unchanged.
-    def mtf(self, node):
+    def mtf(self, node, roll=None):
+        if roll == -1:
+            self.head.print()
+            node.print()
+            node.next.print()
+            node.prev.print()
         node.prev.next = node.next
         node.next.prev = node.prev
+
+        if roll == -1:
+            print(node.prev.next.key)
+            print(node.next.prev.key)
 
         node.prev = self.head.prev
         node.next = self.head.prev.next
 
+        if roll == -1:
+            print(self.head == node)
+            print(self.head.prev.next.key)
+            print(node.prev.key)
+            print(node.next.key)
+
         node.next.prev = node
         node.prev.next = node
+        if roll == -1:
+            print(node.next.prev.key)
+            print(node.prev.next.key)
 
+        if roll == -1:
+            self.head.print()
+            node.print()
+            node.next.print()
+            node.prev.print()
     # This method returns an iterator that iterates over the non-empty nodes
     # in the doubly linked list in order from the most recently to the least
     # recently used.
@@ -230,8 +280,12 @@ class PLRU(object):
 
     def get_top_n(self, number):
         node = self.head
+        # print("number", number, "size", len(self.ssd))
         l = []
         for i in range(0, min(number, len(self.ssd))):
+            # print("i", i)
+            # print("node", node.empty)
+            # print(node.key)
             l.append(node.key)
             node = node.next
         # print("debug", len(l), l==None)
