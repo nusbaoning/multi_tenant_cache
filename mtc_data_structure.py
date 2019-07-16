@@ -177,12 +177,11 @@ class Cache(object):
                     s.update = 0
                     self.samples.append(s)
         
-    def do_req_help(cache, rw, blkid, roll):
-        self.req += 1
-        hit = cache.is_hit(req)
+    def do_req_help(self, cache, rw, blkid, roll):
+        hit = cache.is_hit(blkid)
         if rw==1 and hit:
             cache.add_update()
-        (evicted, update) = cache.update_cache(req, roll)
+        (evicted, update) = cache.update_cache(blkid, roll)
         if update==-1:
             update=False
         else:
@@ -194,14 +193,14 @@ class Cache(object):
     #     h2 = c2.get_hit()
     #     return (h1-h2)/h1
 
-    def exceed_throt(hit):
+    def exceed_throt(self, hit):
         baseline = self.baseline.get_hit()
-        h = (hit - baseline)/self.req
+        h = (baseline - hit)/self.req
         if h > self.policy["throt"]:
             return True
         return False
 
-    def get_close_potentials():
+    def get_close_potentials(self):
         sizeRatio = self.cache.sizeRatio
         size = int(sizeRatio*self.ucln)
         p = self.cache.p
@@ -219,12 +218,13 @@ class Cache(object):
     def do_req(self, rw, blkid):
         random.seed()
         roll = random.random()
-        do_req_help(self.baseline, rw, blkid, roll)
-        do_req_help(self.cache, rw, blkid, roll)
+        self.req += 1
+        self.do_req_help(self.baseline, rw, blkid, roll)
+        self.do_req_help(self.cache, rw, blkid, roll)
         for s in self.samples:
-            do_req_help(s, rw, blkid, roll)
-        if exceed_throt(self.cache.hit):
-            (p1, p2) = get_close_potentials()
+            self.do_req_help(s, rw, blkid, roll)
+        if self.exceed_throt(self.cache.hit):
+            (p1, p2) = self.get_close_potentials()
             if p1.get_hit() > p2.get_hit():
                 return (True, (p1.size-self.cache.size, p1.p-self.cache.p), (p2.size-self.cache.size, p2.p-self.cache.p))
             return (True, (p2.size-self.cache.size, p2.p-self.cache.p), (p1.size-self.cache.size, p1.p-self.cache.p))
@@ -238,22 +238,25 @@ class Cache(object):
     
     # give potentials inside the hit range
     # remove bad ones (both s and p are larger)
-    def get_potential():
+    def get_potential(self):
         potentials = []
         results = []
         for sample in self.samples:
-            if exceed_throt(sample.get_hit()):
+            if self.exceed_throt(sample.get_hit()):
                 continue
             potentials.append(sample)
-
+        # print("sample", sample)
         for i in range(len(potentials)):
             sign = False
             for j in range(len(potentials)):
+                # print(i, j, potentials[i].size, potentials[j].size, potentials[i].update, potentials[j].update)
+                # print(sign)
                 if i==j:
                     continue
-                if potentials[i].s >= potentials[j].s and potentials[i].p >= potentials[j].p:
+                if potentials[i].size > potentials[j].size and potentials[i].update > potentials[j].update:
                     sign = True
                     break
+            # print(sign)
             if not sign:
                 results.append(potentials[i])
 

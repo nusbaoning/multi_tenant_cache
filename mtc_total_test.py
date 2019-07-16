@@ -2,8 +2,9 @@ from __future__ import print_function
 import math
 import mtc_data_structure
 import time
-# path = "/home/trace/ms-cambridge/part/"
-path = "./"
+import sys
+path = "/home/trace/ms-cambridge/part/"
+# path = "./"
 danwei = 10**7
 
 # assume that s|ttl%3600=0
@@ -18,6 +19,7 @@ def load_lines(trace, ttl, ul, s, lines, uclnDict):
     print("trace", trace, "fileStart", fileStart, "fileEnd", fileEnd, "nrfile", nrfile)
     for i in range(fileStart, fileEnd):
         filename = path + trace + "_" + str(i+1) + ".req"
+        print(filename)
         fp = open(filename, "r")
         l = fp.readlines()
         lines.extend(l[:-2])
@@ -85,7 +87,7 @@ def generate_reqs(traces, totalTimeLength, unitLength, start):
     logfile.close()
     return uclnDict
         
-def get_reqs(traces, totalTimeLength, unitLength):
+def get_reqs(traces):
     filename = path + "mix" + "_" + str(len(traces)) + ".req"
     fp = open(filename, 'r')
     lines = fp.readlines()
@@ -125,10 +127,14 @@ def print_result(traces, device, cacheDict, time):
     print("cache", write, size, cost, sep=',',  file=fp)
 
     for trace in traces:
-        base = cacheDict[trace].base.get_hit()/cacheDict[trace].req
-        cache = cacheDict[trace].cache.get_hit()/cacheDict[trace].req
-        print(trace, base, cache, (base-cache<=cacheDict[trace].policy.throt), sep=',', file=fp)
-
+        base = 1.0*cacheDict[trace].baseline.get_hit()/cacheDict[trace].req
+        cache = 1.0*cacheDict[trace].cache.get_hit()/cacheDict[trace].req
+        print(trace, base, cache, (base-cache<=cacheDict[trace].policy["throt"]), sep=',', file=fp)
+        print(cacheDict[trace].baseline.get_parameters())
+        (size, p, update, hit) = cacheDict[trace].baseline.get_parameters()
+        print("base", size, p, update, hit, file=fp)
+        (size, p, update, hit) = cacheDict[trace].cache.get_parameters()
+        print("cache", size, p, update, hit, cacheDict[trace].req, file=fp)
 
 traces = ["prxy_0", "usr_1", "web_0" ]
 totalTimeLength = 3600*danwei
@@ -152,24 +158,28 @@ size = get_total_size(cacheDict, "base")
 g = 0.014/3600/danwei
 device = mtc_data_structure.Device(2*size, g, cacheDict)
 periodStart = 0
+periodLength = 60*danwei
+reqs = get_reqs(traces)
 
-# reqs = get_reqs(traces, totalTimeLength, unitLength)
-    
-# for req in reqs:
-#     (trace, time, rw, blkid) = parse_line(req, "get")
-#     (needInmediateM, scheme1, scheme2) = cacheDict[trace].do_req(rw, blkid)
-#     if needInmediateM:
-#         (s, p) = device.try_modify(scheme1, scheme2)
-#         cacheDict[trace].change_config(s, p) 
-#     if time - periodStart >= periodLength:
-#         periodStart = time
-#         potentials = []
-#         for trace in traces:
-#             potentials.append(cacheDict[trace].get_potential())
-#         result = device.get_best_config(potentials)
-#         for i in (0, len(traces)):
-#             cacheDict[traces[i]].change_config(result[i].size, result[i].p)
-#             cacheDict[trace[i]].init_samples()
+print("Reqs = ", len(reqs))
+start = time.clock()
+for req in reqs:
+    (trace, mytime, rw, blkid) = parse_line(req, "get")
+    (needInmediateM, scheme1, scheme2) = cacheDict[trace].do_req(rw, blkid)
+    if needInmediateM:
+        (s, p) = device.try_modify(scheme1, scheme2)
+        cacheDict[trace].change_config(s, p) 
+        print("test error needInmediateM")
+        sys.exit(0)
+    # if mytime - periodStart >= periodLength:
+    #     periodStart = mytime
+    #     potentials = []
+    #     for trace in traces:
+    #         potentials.append(cacheDict[trace].get_potential())
+    #     result = device.get_best_config(potentials)
+    #     for i in range(len(traces)):
+    #         cacheDict[traces[i]].change_config(result[i].size, result[i].p)
+    #         cacheDict[traces[i]].init_samples()
 
-
-# print_result(traces, device, cacheDict, totalTimeLength)
+print("consumed", time.clock()-start, "s")
+print_result(traces, device, cacheDict, totalTimeLength)

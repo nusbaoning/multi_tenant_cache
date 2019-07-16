@@ -332,3 +332,10 @@ class PLRU(object):
         if(len(self.ssd) >= self.size):
             return True
         return False
+
+    def get_parameters(self):
+        size = self.size
+        p = self.p
+        update = self.update
+        hit = self.hit
+        return (size, p, update, hit)

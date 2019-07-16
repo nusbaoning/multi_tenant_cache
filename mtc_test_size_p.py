@@ -5,6 +5,7 @@ import sys
 import math
 import random
 from cache_algorithm import PLRU
+
 # add trace workflow:
 # add ucln
 # add path
@@ -86,6 +87,7 @@ uclnDict = {"netsfs":47949, "mix":195423,
 }
 pathDirCam = "/home/trace/ms-cambridge/"
 pathDictHome = "/root/bn"
+pathDictMtc = "/home/trace/ms-cambridge/part/"
 
 pathDict = {
 "bs24":	"/mnt/raid5/trace/MS-production/BuildServer/Traces/24.hour.BuildServer.11-28-2007.07-24-PM.trace.csv.req",
@@ -116,6 +118,8 @@ def getPath(traceID, typeID):
         return pathDict[traceID]
     if typeID == "filebench":
         return "/home/chai/go_filebench-1.4.8.fsl.0.8/workloads/" + traceID + "/test1_short.txt.req"
+    if typeID == "mtc":
+        return pathDictMtc + traceID + "_1.req"
 
 PERIODNUM = 10
 PERIODLEN = 10 ** 5
@@ -134,10 +138,16 @@ def load_file(traceID, typeID, sizerate=0.1, p=1, mode='w'):
     lines = fin.readlines()
     req = 0
     print("load file finished")
+    if typeID == "mtc":
+        lines = lines[:-2]
     for line in lines:
-        items = line.split(' ')
-        reqtype = int(items[0])
-        block = int(items[2])
+        items = line.strip().split(' ')
+        if typeID == "mtc":
+            reqtype = int(items[2])
+            block = int(items[3])
+        else:
+            reqtype = int(items[0])
+            block = int(items[2])
         if mode == 'r':
             if reqtype == 1:			
                 ssd.delete_cache(block)
@@ -206,7 +216,11 @@ def load_metadata_dict(filename="metadata.csv"):
         ucln = int(line[9])
         uclnDict[traceID] = ucln
     
-# uclnDict = {}
+uclnDict = {
+    "prxy_0": 25331,
+"usr_1": 319484 ,
+"web_0": 4567 
+}
 # load_metadata_dict()
 # # print(uclnDict)
 # # print(len(uclnDict))
@@ -215,17 +229,19 @@ def load_metadata_dict(filename="metadata.csv"):
 # for (trace, ucln) in l:
 #     print(trace)
 #     load_file(trace, "cam", 0.1, 1, 'w')
-# TRACELIST = ["probuild"]
+traceList = ["prxy_0", "usr_1", "web_0"]
+pList = [1]
+sList = [0.1]
 # pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
 # sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
 # traceList = ["wdev_0", "hm_0", "prn_1", "prxy_0", "proj_3", "src2_0",
 # "ts_0", "usr_0"]
-# for trace in traceList:
-#     for p in pList:
-#         for sizerate in sList:
-
-#             start = time.clock()
-#             load_file(trace, "cam", sizerate, p)
-#             end = time.clock()
-#             print(trace, "cam", sizerate, p, "consumed ", end-start, "s")
-#     		# sys.exit(-1) 
+for trace in traceList:
+    for p in pList:
+        for sizerate in sList:
+            start = time.clock()
+            typeID = "mtc"
+            load_file(trace, typeID, sizerate, p)
+            end = time.clock()
+            print(trace, typeID, sizerate, p, "consumed ", end-start, "s")
+    		# sys.exit(-1) 
