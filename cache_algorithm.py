@@ -311,6 +311,7 @@ class PLRU(object):
                 print(node.key, end=",")
                 node = node.next        
             print()
+        print("p", self.p, "s", self.size)
         print("hit", self.hit)
         print("write", self.update)
 

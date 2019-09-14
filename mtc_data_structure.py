@@ -115,12 +115,15 @@ class Device(object):
 
 
     def get_best_config_help(self, potentials, selected, size, write):
+
         if potentials==[]:
+            # print("minWrite=", self.minWrite, ",write=", write, ",size=", size)
             if self.minWrite == None or write < self.minWrite:
                 self.minWrite = write
                 self.configList = []
                 for item in selected:
                     self.configList.append(item)
+                    # print("item,", item.p, item.size)
             return
         items = potentials[0]
         for item in items:
@@ -129,7 +132,10 @@ class Device(object):
             if size + s > self.size:
                 continue
             selected.append(item)
+            # print("before", len(selected))
             self.get_best_config_help(potentials[1:], selected, size+s, write+w)
+            selected = selected[:-1]
+            # print("after", len(selected))
 
 
         
@@ -138,6 +144,7 @@ class Device(object):
         self.minWrite = None
         self.configList = []
         self.get_best_config_help(potentials, [], 0, 0)
+        # print("size", len(self.configList))
         return self.configList
 
         
@@ -158,24 +165,31 @@ class Cache(object):
 
     def init_samples(self):
         self.samples = []
-        for i in range(self.policy["nrsamples"]):
-            for j in range(self.policy["nrsamples"]):
+        for i in range(-self.policy["nrsamples"], self.policy["nrsamples"]):
+            for j in range(-self.policy["nrsamples"], self.policy["nrsamples"]):
                 if i == 0 and j == 0:
                     continue
+                # print("i=", i, ",j=", j)
                 sizeRatio = self.cacheSizeRatio + i * self.policy["deltas"]
                 p = self.cache.p + j * self.policy["deltap"]
+                # print("sr=", sizeRatio, ",p=", p)
                 if is_valid_sp(sizeRatio, p):
+                    size = int(sizeRatio*self.ucln)
+                    # print("valid", size, p)
                     s = PLRU(int(sizeRatio*self.ucln), p)
-                    s.copy(self.cache)
+                    s.copy(self.cache, size, p)
                     s.update = 0
                     self.samples.append(s)
-                sizeRatio = self.cacheSizeRatio - i * self.policy["deltas"]
-                p = self.cache.p - j * self.policy["deltap"]
-                if is_valid_sp(sizeRatio, p):
-                    s = PLRU(int(sizeRatio*self.ucln), p)
-                    s.copy(self.cache)
-                    s.update = 0
-                    self.samples.append(s)
+                # sizeRatio = self.cacheSizeRatio - i * self.policy["deltas"]
+                # p = self.cache.p - j * self.policy["deltap"]
+                # print("sr=", sizeRatio, ",p=", p)
+                # if is_valid_sp(sizeRatio, p):
+                #     size = int(sizeRatio*self.ucln)
+                #     print("valid", size, p)
+                #     s = PLRU(size, p)
+                #     s.copy(self.cache, size, p)
+                #     s.update = 0
+                #     self.samples.append(s)
         
     def do_req_help(self, cache, rw, blkid, roll):
         hit = cache.is_hit(blkid)
@@ -234,8 +248,8 @@ class Cache(object):
     def change_config(self, s, p):
         self.cache.change_size(s)
         self.cache.change_p(p)
-        self.cacheSizeRatio = round(s/self.ucln, 1)
-    
+        self.cacheSizeRatio = round(1.0*s/self.ucln, 1)
+        # print("sr=", self.cacheSizeRatio)
     # give potentials inside the hit range
     # remove bad ones (both s and p are larger)
     def get_potential(self):
