@@ -1,5 +1,6 @@
 from cache_algorithm import PLRU
 import random
+import sys
 danwei = 10**7
 
 # assume that the cache is larger than time period 
@@ -97,20 +98,24 @@ class Device(object):
         self.usedSize = self.get_total_size()
 
     def get_cost(self, write, time):
+        print("write=", write, ",size=", self.size, ",g=", self.g, ",time=", time)
         if write > self.size * self.g * time:
             return write/self.size/self.g/time
         return 1
     
 
-    def try_modify(scheme1, scheme2):
-        (s, p) = scheme1
-        if s <= self.size - self.usedSize:
-            self.usedSize += s
-            return (s, p)
-        (s, p) = scheme2
-        if s <= self.size - self.usedSize:
-            self.usedSize += s
-            return (s, p)
+    def try_modify(self, scheme1, scheme2):
+        if scheme1!=None:            
+            (deltas, deltap) = scheme1
+            if deltas <= self.size - self.usedSize:
+                self.usedSize += deltas
+                return (deltas, deltap)
+        if scheme2==None:
+            return None
+        (deltas, deltap) = scheme2
+        if deltas <= self.size - self.usedSize:
+            self.usedSize += deltas
+            return (deltas, deltap)
         return None
 
 
@@ -208,26 +213,31 @@ class Cache(object):
     #     return (h1-h2)/h1
 
     def exceed_throt(self, hit):
+        # print("exceed_throt self=", self)
         baseline = self.baseline.get_hit()
-        h = (baseline - hit)/self.req
+
+        h = 1.0*(baseline - hit)/self.req
+        # if (hit!=baseline):            
+        #     print("baseline", baseline, ",cache", hit, ",Dratio=", h)
         if h > self.policy["throt"]:
             return True
         return False
 
     def get_close_potentials(self):
-        sizeRatio = self.cache.sizeRatio
+        # print("enter get close potentials")
+        sizeRatio = self.cacheSizeRatio
         size = int(sizeRatio*self.ucln)
         p = self.cache.p
         pt1 = None
         pt2 = None
-        for pt in self.potentials:
+        for pt in self.samples:
             if pt.size == size and pt.p==p+self.policy["deltap"]:
                 pt1 = pt
             elif pt.size == size+self.policy["deltas"] and pt.p == p:
                 pt2 = pt
             if pt1!=None and pt2!=None:
                 return (pt1, pt2)
-
+        return (pt1, pt2)
 
     def do_req(self, rw, blkid):
         random.seed()
@@ -237,8 +247,16 @@ class Cache(object):
         self.do_req_help(self.cache, rw, blkid, roll)
         for s in self.samples:
             self.do_req_help(s, rw, blkid, roll)
+        # print("self=", self)
         if self.exceed_throt(self.cache.hit):
+            # print("after self=", self)
             (p1, p2) = self.get_close_potentials()
+            if p1==None and p2==None:
+                return (False, None, None)
+            elif p1==None:
+                return (True, (p2.size-self.cache.size, p2.p-self.cache.p), None)
+            elif p2==None:
+                return (True, (p1.size-self.cache.size, p1.p-self.cache.p), None)
             if p1.get_hit() > p2.get_hit():
                 return (True, (p1.size-self.cache.size, p1.p-self.cache.p), (p2.size-self.cache.size, p2.p-self.cache.p))
             return (True, (p2.size-self.cache.size, p2.p-self.cache.p), (p1.size-self.cache.size, p1.p-self.cache.p))
@@ -246,9 +264,15 @@ class Cache(object):
 
 
     def change_config(self, s, p):
+        # size = s+self.cache.size
+        # p = p+self.cache.p
         self.cache.change_size(s)
         self.cache.change_p(p)
         self.cacheSizeRatio = round(1.0*s/self.ucln, 1)
+        assert self.cacheSizeRatio >= 1
+        # if self.cacheSizeRatio >= 1:
+        #     print("trace", self.trace, ",sr=", self.cacheSizeRatio, ",s=", s, "p=", p)
+        #     sys.exit(-1)
         # print("sr=", self.cacheSizeRatio)
     # give potentials inside the hit range
     # remove bad ones (both s and p are larger)
@@ -259,6 +283,7 @@ class Cache(object):
             if self.exceed_throt(sample.get_hit()):
                 continue
             potentials.append(sample)
+        
         # print("sample", sample)
         for i in range(len(potentials)):
             sign = False

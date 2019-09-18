@@ -119,11 +119,11 @@ def print_result(traces, device, cacheDict, time):
     print(file=fp)
     write = get_total_write(cacheDict, "base")
     size = get_total_size(cacheDict, "base")
-    cost = device.get_cost(time, write)
+    cost = device.get_cost(write, time)
     print("base", write, size, cost, sep=',', file=fp)
     write = get_total_write(cacheDict, "cache")
     size = get_total_size(cacheDict, "cache")
-    cost = device.get_cost(time, write)
+    cost = device.get_cost(write, time)
     print("cache", write, size, cost, sep=',',  file=fp)
 
     for trace in traces:
@@ -179,18 +179,22 @@ for req in reqs:
     elif cacheDict[trace].cache.get_top_n(1) == [blkid]:
         myupdate[trace] += 1
     if needInmediateM:
-        (s, p) = device.try_modify(scheme1, scheme2)
+        (deltas, deltap) = device.try_modify(scheme1, scheme2)
+        s = deltas + cacheDict[trace].cache.get_size()
+        p = deltap + cacheDict[trace].cache.get_p()
         cacheDict[trace].change_config(s, p) 
-        print("test error needInmediateM")
-        sys.exit(0)
+        # print("test error needInmediateM")
+        # sys.exit(0)
     if mytime - periodStart >= periodLength:
         periodStart = mytime
         potentials = []
         for trace in traces:
             potentials.append(cacheDict[trace].get_potential())
         result = device.get_best_config(potentials)
+        if len(result) == 0:
+            continue
         for i in range(len(traces)):
-            cacheDict[traces[i]].change_config(result[i].size, result[i].p)
+            cacheDict[traces[i]].change_config(result[i].get_size(), result[i].get_p())
             cacheDict[traces[i]].init_samples()
 
 print("myupdate", myupdate)

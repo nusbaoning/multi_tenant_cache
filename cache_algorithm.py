@@ -240,6 +240,7 @@ class PLRU(object):
         self.p = p
 
     def change_size(self, size):
+        # print(size, self.listSize)
         self.size = size      
         l = []  
         if size > self.listSize:
