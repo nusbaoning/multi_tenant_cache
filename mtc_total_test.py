@@ -130,7 +130,7 @@ def print_result(traces, device, cacheDict, time):
         base = 1.0*cacheDict[trace].baseline.get_hit()/cacheDict[trace].req
         cache = 1.0*cacheDict[trace].cache.get_hit()/cacheDict[trace].req
         print(trace, base, cache, (base-cache<=cacheDict[trace].policy["throt"]), sep=',', file=fp)
-        print(cacheDict[trace].baseline.get_parameters())
+        # print(cacheDict[trace].baseline.get_parameters())
         (size, p, update, hit) = cacheDict[trace].baseline.get_parameters()
         print("base", size, p, update, hit, file=fp)
         (size, p, update, hit) = cacheDict[trace].cache.get_parameters()
@@ -149,13 +149,15 @@ for i in range(len(traces)):
 cacheDict = {}
 sizeRate = 0.1
 p = 1
-policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01}
+policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01, "interval":danwei}
 myupdate = {}
+dimdm = {}
 for i in range(len(traces)):    
     trace = traces[i]
     cache = mtc_data_structure.Cache(trace, sizeRate, len(uclnDict[i]), p, policy)
     cacheDict[trace] = cache
     myupdate[trace] = 0
+    dimdm[trace] = start
 # g=tbw/lifespan/capacity
 size = get_total_size(cacheDict, "base")
 g = 0.014/3600/danwei
@@ -178,7 +180,7 @@ for req in reqs:
             myupdate[trace] += 1
     elif cacheDict[trace].cache.get_top_n(1) == [blkid]:
         myupdate[trace] += 1
-    if needInmediateM:
+    if needInmediateM and mytime-dimdm[trace]>=policy["interval"]:
         (deltas, deltap) = device.try_modify(scheme1, scheme2)
         s = deltas + cacheDict[trace].cache.get_size()
         p = deltap + cacheDict[trace].cache.get_p()
@@ -189,18 +191,26 @@ for req in reqs:
         periodStart = mytime
         potentials = []
         for trace in traces:
-            potentials.append(cacheDict[trace].get_potential())
-        result = device.get_best_config(potentials)
+            # print("debug", trace)
+            l = cacheDict[trace].get_potential()
+            if len(l) == 0:
+                break                
+            potentials.append(l)
+        if len(potentials) < len(traces):
+            result = []
+        else:
+            result = device.get_best_config(potentials)
         if len(result) == 0:
             continue
         for i in range(len(traces)):
+            # print("i=", i, ",trace=", traces[i], result[i].get_size(), result[i].get_p())
             cacheDict[traces[i]].change_config(result[i].get_size(), result[i].get_p())
             cacheDict[traces[i]].init_samples()
 
 print("myupdate", myupdate)
 print("consumed", time.clock()-start, "s")
 print_result(traces, device, cacheDict, totalTimeLength)
-for trace in traces:
-    for cache in cacheDict[trace].samples:
-        print(trace)
-        cache.print_sample()
+# for trace in traces:
+#     for cache in cacheDict[trace].samples:
+#         print(trace)
+#         cache.print_sample()

@@ -126,9 +126,11 @@ class Device(object):
             if self.minWrite == None or write < self.minWrite:
                 self.minWrite = write
                 self.configList = []
+                # i = 0
                 for item in selected:
                     self.configList.append(item)
-                    # print("item,", item.p, item.size)
+                    # print("item,", i, item.p, item.size)
+                    # i += 1
             return
         items = potentials[0]
         for item in items:
@@ -268,8 +270,10 @@ class Cache(object):
         # p = p+self.cache.p
         self.cache.change_size(s)
         self.cache.change_p(p)
-        self.cacheSizeRatio = round(1.0*s/self.ucln, 1)
-        assert self.cacheSizeRatio >= 1
+
+        self.cacheSizeRatio = round(1.0*s/self.ucln, 2)
+        # print(s, p, self.ucln, self.cacheSizeRatio, self.cacheSizeRatio>=1)
+        assert self.cacheSizeRatio < 1
         # if self.cacheSizeRatio >= 1:
         #     print("trace", self.trace, ",sr=", self.cacheSizeRatio, ",s=", s, "p=", p)
         #     sys.exit(-1)
@@ -279,6 +283,7 @@ class Cache(object):
     def get_potential(self):
         potentials = []
         results = []
+        # print("debug, len samples=", len(self.samples))
         for sample in self.samples:
             if self.exceed_throt(sample.get_hit()):
                 continue
@@ -292,11 +297,12 @@ class Cache(object):
                 # print(sign)
                 if i==j:
                     continue
-                if potentials[i].size > potentials[j].size and potentials[i].update > potentials[j].update:
+                if potentials[i].size >= potentials[j].size and potentials[i].update >= potentials[j].update:
                     sign = True
                     break
             # print(sign)
             if not sign:
+                # print("debug", potentials[i].get_size(), potentials[i].get_update(), potentials[i].get_p())
                 results.append(potentials[i])
 
         return results
