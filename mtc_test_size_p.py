@@ -126,7 +126,19 @@ PERIODLEN = 10 ** 5
 logFilename = "./mtvt_result.csv"
 # SIZERATE = 0.1
 
-
+def parse_line(line, mode):
+    # print("line", line)
+    items = line.strip().split(' ')
+    # print("items", items)
+    if mode=="mtc":
+        time = int(items[0])
+        rw = int(items[1])
+        blkid = int(items[3])
+        return (time, rw, blkid)
+    else:
+        rw = int(items[0])
+        blkid = int(items[2])
+    return (rw, blkid)
 
 # mode = 'w', deal with write reqs
 # mode = 'r', ignore write reqs
@@ -137,13 +149,18 @@ def load_file(traceID, typeID, sizerate=0.1, p=1, mode='w'):
     fin = open(getPath(traceID, typeID), 'r')
     lines = fin.readlines()
     req = 0
+    myupdate = 0
+    minTime = None
+    maxTime = None
     print("load file finished")
     if typeID == "mtc":
         lines = lines[:-2]
+        minTime = parse_line(lines[0], typeID)[0]/(10**7)
+        maxTime = parse_line(lines[-1], typeID)[0]/(10**7)
     for line in lines:
         items = line.strip().split(' ')
-        if typeID == "mtc":
-            reqtype = int(items[2])
+        if typeID == "mtc":            
+            reqtype = int(items[1])
             block = int(items[3])
         else:
             reqtype = int(items[0])
@@ -151,7 +168,8 @@ def load_file(traceID, typeID, sizerate=0.1, p=1, mode='w'):
         if mode == 'r':
             if reqtype == 1:			
                 ssd.delete_cache(block)
-            else:		
+            else:	
+                readReq += 1	
                 if readReq % 1000000 == 0:
                     print(readReq)
                 req += 1
@@ -160,14 +178,19 @@ def load_file(traceID, typeID, sizerate=0.1, p=1, mode='w'):
         else:
             req += 1
             hit = ssd.is_hit(block)
+            if reqtype == 0:
+                readReq += 1
             if reqtype == 1 and hit:
                 ssd.add_update()
+                myupdate += 1
             ssd.update_cache(block)
+            if not hit and ssd.get_top_n(1)==[block]:
+                myupdate += 1
     fin.close()
-    print("size", size, p)
+    print(traceID, "size", size, p, "myupdate", myupdate)
     print("total hit rate", 1.0*ssd.hit/req, ssd.update)
     logFile = open(logFilename, "a")
-    print(traceID, p, sizerate, size, 1.0*ssd.hit/req, ssd.update, sep=',', file=logFile)
+    print(traceID, p, sizerate, size, 1.0*ssd.hit/req, ssd.update, req, round(1.0*readReq/req,3), minTime, maxTime, sep=',', file=logFile)
     logFile.close()
 
 # calculate hit ratios of every period
@@ -229,7 +252,8 @@ uclnDict = {
 # for (trace, ucln) in l:
 #     print(trace)
 #     load_file(trace, "cam", 0.1, 1, 'w')
-traceList = ["prxy_0", "usr_1", "web_0"]
+# traceList = ["prxy_0", "usr_1", "web_0"]
+traceList = ["prxy_0"]
 pList = [1]
 sList = [0.1]
 # pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
