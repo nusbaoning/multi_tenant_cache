@@ -1,77 +1,80 @@
+#coding=utf-8
 from cache_algorithm import PLRU
 import random
 import sys
+import copy
+
 danwei = 10**7
 
-# assume that the cache is larger than time period 
-# the evict result of potentials are the same as original cache when evict
-class SampleCache(object):
-    """docstring for SampleSSD"""
-    def __init__(self, p, size, cache):
-        self.p = p
-        self.size = size
-        self.add = {}
-        self.minus = {}
-        self.update = cache.get_update()
-        self.hit = cache.get_hit()
-        if self.size < cache.size:
-            l = cache.get_tail_n(cache.size - self.size)
-            for item in l:
-                self.minus[item] = True
+# 本来想用sampleCache的shadow来模拟候选cache
+# 后面发现结果很容易不准，暂时不用这个方案了，等后期实在内存不够运行太慢了再说
+# class SampleCache(object):
+#     """docstring for SampleSSD"""
+#     def __init__(self, p, size, cache):
+#         self.p = p
+#         self.size = size
+#         self.add = {}
+#         self.minus = {}
+#         self.update = cache.get_update()
+#         self.hit = cache.get_hit()
+#         if self.size < cache.size:
+#             l = cache.get_tail_n(cache.size - self.size)
+#             for item in l:
+#                 self.minus[item] = True
 
-    # no call from outside! only call by update_cache
-    def is_hit(self, req, rw, hit):
-        myhit = hit
-        if myhit:
-            if req in self.minus:
-                myhit = False
-        else:
-            if req in self.add:
-                myhit = True
-        if myhit:
-            self.hit += 1
-        return myhit
+#     # no call from outside! only call by update_cache
+#     def is_hit(self, req, rw, hit):
+#         myhit = hit
+#         if myhit:
+#             if req in self.minus:
+#                 myhit = False
+#         else:
+#             if req in self.add:
+#                 myhit = True
+#         if myhit:
+#             self.hit += 1
+#         return myhit
 
-    def add_update(self):
-        self.update += 1
+#     def add_update(self):
+#         self.update += 1
 
-    def get_len(self, cache):
-        return len(cache) + len(self.add) - len(self.minus)
+#     def get_len(self, cache):
+#         return len(cache) + len(self.add) - len(self.minus)
 
-    def evict(self, blkid):
-        if blkid in self.minus:
-            del self.minus[blkid]
-        elif blkid in self.add:
-            del self.add[blkid]
+#     def evict(self, blkid):
+#         if blkid in self.minus:
+#             del self.minus[blkid]
+#         elif blkid in self.add:
+#             del self.add[blkid]
 
-    def update_cache(self, roll, blkid, rw, hit, update, cache):
-        myhit = self.is_hit(blkid, rw, hit)
-        myupdate = False
-        myevict = False
-        if myhit and rw==1:
-            self.add_update()
-        # in old ssd -> not in add
-        # if in minus and updated in sample, del minus
-        if not myhit and roll<self.p:
-            self.add_update()
-            myupdate = True
-# need to modify, possible that shadow cache and original cache evict different block
-            if self.size <= self.get_len(cache):
-                myevict = True
-        if new_in_cache(hit, update) == new_in_cache(myhit, myupdate):
-            self.evict(blkid)
-        else:
-            if new_in_cache(hit, update):
-                minus[blkid] = True
-            else:
-                add[blkid] = True
-        if evicted == myevict:
-             self.evict(tail)
-        else:
-            if evicted:
-                add[tail] = True
-            else:
-                minus[tail] = True            
+#     def update_cache(self, roll, blkid, rw, hit, update, cache):
+#         myhit = self.is_hit(blkid, rw, hit)
+#         myupdate = False
+#         myevict = False
+#         if myhit and rw==1:
+#             self.add_update()
+#         # in old ssd -> not in add
+#         # if in minus and updated in sample, del minus
+#         if not myhit and roll<self.p:
+#             self.add_update()
+#             myupdate = True
+# # need to modify, possible that shadow cache and original cache evict different block
+#             if self.size <= self.get_len(cache):
+#                 myevict = True
+#         if new_in_cache(hit, update) == new_in_cache(myhit, myupdate):
+#             self.evict(blkid)
+#         else:
+#             if new_in_cache(hit, update):
+#                 minus[blkid] = True
+#             else:
+#                 add[blkid] = True
+#         if evicted == myevict:
+#              self.evict(tail)
+#         else:
+#             if evicted:
+#                 add[tail] = True
+#             else:
+#                 minus[tail] = True            
 
 def is_valid_sp(sizeRatio, p):
     if p > 1 or p <= 0:
@@ -81,9 +84,11 @@ def is_valid_sp(sizeRatio, p):
     return True
 
 
-
+# 这是和整个device有关的类
 class Device(object):
     """docstring for Device"""
+
+    # 返回当前device被使用的size
     def get_total_size(self):
         s = 0
         for trace in self.cacheDict:
@@ -97,13 +102,14 @@ class Device(object):
         self.cacheDict = cacheDict
         self.usedSize = self.get_total_size()
 
+    # 返回给定的时间和写入量下device的相对cost
     def get_cost(self, write, time):
         print("write=", write, ",size=", self.size, ",g=", self.g, ",time=", time)
         if write > self.size * self.g * time:
-            return write/self.size/self.g/time
+            return 1.0*write/self.size/self.g/time
         return 1
     
-
+    # 判断给定方案的size是否越界，返回修改方案改变的s和p，如果不改变返回空值
     def try_modify(self, scheme1, scheme2):
         if scheme1!=None:            
             (deltas, deltap) = scheme1
@@ -118,9 +124,13 @@ class Device(object):
             return (deltas, deltap)
         return None
 
-
+    # 选择最佳配置的帮助函数
     def get_best_config_help(self, potentials, selected, size, write):
-
+        # print("len(potentials)=", len(potentials))
+        # print("selected目前组成是：")
+        # for i in range(len(selected)):
+        #     print(i, selected[i].get_size(), selected[i].get_p())
+        # assert(len(selected)<=3)
         if potentials==[]:
             # print("minWrite=", self.minWrite, ",write=", write, ",size=", size)
             if self.minWrite == None or write < self.minWrite:
@@ -133,15 +143,16 @@ class Device(object):
                     # i += 1
             return
         items = potentials[0]
+        tempSelected = copy.copy(selected)
         for item in items:
             s = item.size
             w = item.get_update()
             if size + s > self.size:
                 continue
-            selected.append(item)
+            tempSelected.append(item)
             # print("before", len(selected))
-            self.get_best_config_help(potentials[1:], selected, size+s, write+w)
-            selected = selected[:-1]
+            self.get_best_config_help(potentials[1:], tempSelected, size+s, write+w)
+            tempSelected = tempSelected[:-1]
             # print("after", len(selected))
 
 
@@ -152,10 +163,16 @@ class Device(object):
         self.configList = []
         self.get_best_config_help(potentials, [], 0, 0)
         # print("size", len(self.configList))
+        # for i in range(len(self.configList)):
+        #     print("get_best_config结果：")
+        #     print(i)
+        #     item = self.configList[i]
+        #     item.print_sample()
         return self.configList
 
         
-
+# mtc项目定制的缓存类
+# 重要的元素是baseline, cache和samples
 class Cache(object):
     """docstring for Cache"""
     def __init__(self, trace, sizeRatio, ucln, p, policy):
@@ -168,10 +185,13 @@ class Cache(object):
         self.baseline = PLRU(int(sizeRatio*ucln), p)
         self.cache = PLRU(int(sizeRatio*ucln), p)
         self.req = 0
-        self.init_samples()
+        self.lastUpdate = 0
+        self.init_samples()        
 
     def init_samples(self):
         self.samples = []
+        self.lastUpdate += self.cache.get_update()
+        self.cache.update = 0
         for i in range(-self.policy["nrsamples"], self.policy["nrsamples"]):
             for j in range(-self.policy["nrsamples"], self.policy["nrsamples"]):
                 if i == 0 and j == 0:
@@ -185,7 +205,6 @@ class Cache(object):
                     # print("valid", size, p)
                     s = PLRU(int(sizeRatio*self.ucln), p)
                     s.copy(self.cache, size, p)
-                    s.update = 0
                     self.samples.append(s)
                 # sizeRatio = self.cacheSizeRatio - i * self.policy["deltas"]
                 # p = self.cache.p - j * self.policy["deltap"]
@@ -272,7 +291,7 @@ class Cache(object):
         self.cache.change_p(p)
 
         self.cacheSizeRatio = round(1.0*s/self.ucln, 2)
-        # print(s, p, self.ucln, self.cacheSizeRatio, self.cacheSizeRatio>=1)
+        print(self.trace, s, p, self.ucln, self.req, self.cacheSizeRatio, self.cacheSizeRatio>=1)
         assert self.cacheSizeRatio < 1
         # if self.cacheSizeRatio >= 1:
         #     print("trace", self.trace, ",sr=", self.cacheSizeRatio, ",s=", s, "p=", p)
@@ -288,25 +307,30 @@ class Cache(object):
             if self.exceed_throt(sample.get_hit()):
                 continue
             potentials.append(sample)
-        
+            # 注释掉优化后加
+            results.append(sample)
         # print("sample", sample)
-        for i in range(len(potentials)):
-            sign = False
-            for j in range(len(potentials)):
-                # print(i, j, potentials[i].size, potentials[j].size, potentials[i].update, potentials[j].update)
-                # print(sign)
-                if i==j:
-                    continue
-                if potentials[i].size >= potentials[j].size and potentials[i].update >= potentials[j].update:
-                    sign = True
-                    break
-            # print(sign)
-            if not sign:
-                # print("debug", potentials[i].get_size(), potentials[i].get_update(), potentials[i].get_p())
-                results.append(potentials[i])
+        # 这段是想要优化的，先注释掉吧
+        # for i in range(len(potentials)):
+        #     sign = False
+        #     for j in range(len(potentials)):
+        #         # print(i, j, potentials[i].size, potentials[j].size, potentials[i].update, potentials[j].update)
+        #         # print(sign)
+        #         if i==j:
+        #             continue
+        #         if potentials[i].size >= potentials[j].size and potentials[i].update >= potentials[j].update:
+        #             sign = True
+        #             break
+        #     # print(sign)
+        #     if not sign:
+        #         # print("debug", potentials[i].get_size(), potentials[i].get_update(), potentials[i].get_p())
+            # results.append(potentials[i])
 
+        results.append(self.cache)
         return results
-            
-        
+    
+    # 因为中间计算时把cache的update减去了，这里加回来
+    def finish(self):
+        self.cache.update += self.lastUpdate
         
                     
