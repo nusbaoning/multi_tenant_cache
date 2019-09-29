@@ -68,7 +68,24 @@ def handle_lines(filename, lines, timeZero):
     end = time.clock()
     print("consumed", end-start, "s", filename)
 
-def handle_csv_time_partition(fileid, filename, timeLength):
+# function: transfer the original .csv req file into several .req files 
+#           including time message
+
+# Parameters:
+# fileid example : "web_0"
+# filename : including the file path
+# time length : the time length of each result file, unit is second
+#               value should be 3600
+#               For example, time length = 1h, each result file includes 1hr traces
+
+# output : 
+# name is fileid + _ + number, starts from 1, "web_0_1.req"
+# each line of result file is 
+# timeStamp, rw, original line[2], blockID
+# The last two lines of result file are
+# len(totalDict), len(readDict), len(writeDict), nrreq, readcount, writecount
+# totalDict
+def handle_csv_time_partition(fileid, filename, timeLength=3600):
     infile = open(filename, 'r')
     lines = infile.readlines()
     # cut the lines
@@ -365,7 +382,7 @@ def handle_req(fileid, filename):
     fin.close()
 
 # l = ["usr_1"] 
-l = ["usr_1", "prxy_0", "web_0" ]
+l = ["prxy_0", "hm_0", "proj_3", "ts_0", "src2_0", "usr_0",  "wdev_0", "prn_1", ]
 # l = ["prn_1", "prxy_0", "hm_0", "proj_3", "usr_0", "ts_0", "wdev_0"]
 # for root, dirs, files in os.walk('/home/trace/ms-cambridge'):  
 # for i in l:

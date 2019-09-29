@@ -88,6 +88,12 @@ def is_valid_sp(sizeRatio, p):
 class Device(object):
     """docstring for Device"""
 
+    def __init__(self, size, g, cacheDict):
+        self.size = size
+        self.g = g
+        self.cacheDict = cacheDict
+        self.usedSize = self.get_total_size()
+
     # 返回当前device被使用的size
     def get_total_size(self):
         s = 0
@@ -96,18 +102,12 @@ class Device(object):
             s += cache.cache.size
         return s
 
-    def __init__(self, size, g, cacheDict):
-        self.size = size
-        self.g = g
-        self.cacheDict = cacheDict
-        self.usedSize = self.get_total_size()
-
-    # 返回给定的时间和写入量下device的相对cost
-    def get_cost(self, write, time):
-        print("write=", write, ",size=", self.size, ",g=", self.g, ",time=", time)
+    # 返回给定的时间和写入量下device的单位时间内租用size大小的缓存，默认k1为1的情况下的cost
+    def get_cost(self, write, time, size):
+        # print("write=", write, ",size=", size, ",g=", self.g, ",time=", time)
         if write > self.size * self.g * time:
-            return 1.0*write/self.size/self.g/time
-        return 1
+            return 1.0*write/self.g/time
+        return size
     
     # 判断给定方案的size是否越界，返回修改方案改变的s和p，如果不改变返回空值
     def try_modify(self, scheme1, scheme2):
@@ -175,23 +175,27 @@ class Device(object):
 # 重要的元素是baseline, cache和samples
 class Cache(object):
     """docstring for Cache"""
-    def __init__(self, trace, sizeRatio, ucln, p, policy):
+    def __init__(self, trace, bsizeRatio, csizeRatio, ucln, p, policy):
         self.trace = trace
-        self.cacheSizeRatio = sizeRatio
+        self.bsizeRatio = bsizeRatio
+        self.cacheSizeRatio = csizeRatio
         # self.p = p
         self.ucln = ucln
         # policy = nrsamples, hit throt, +-s, +-p
         self.policy = policy
-        self.baseline = PLRU(int(sizeRatio*ucln), p)
-        self.cache = PLRU(int(sizeRatio*ucln), p)
+        self.baseline = PLRU(int(bsizeRatio*ucln), p)
+        self.cache = PLRU(int(csizeRatio*ucln), p)
         self.req = 0
-        self.lastUpdate = 0
+        self.lastBaseUpdate = 0
+        self.lastCacheUpdate = 0
         self.init_samples()        
 
     def init_samples(self):
         self.samples = []
-        self.lastUpdate += self.cache.get_update()
+        self.lastBaseUpdate += self.baseline.get_update()
+        self.lastCacheUpdate += self.cache.get_update()
         self.cache.update = 0
+        self.baseline.update = 0
         for i in range(-self.policy["nrsamples"], self.policy["nrsamples"]):
             for j in range(-self.policy["nrsamples"], self.policy["nrsamples"]):
                 if i == 0 and j == 0:
@@ -234,7 +238,11 @@ class Cache(object):
     #     return (h1-h2)/h1
 
     def exceed_throt(self, hit):
-        # print("exceed_throt self=", self)
+        # 极端情况：某个trace在第一个周期内没有req，在get_potential中调用此函数
+        # 需要加个条件判断
+        if self.req == 0:
+            return False
+
         baseline = self.baseline.get_hit()
 
         h = 1.0*(baseline - hit)/self.req
@@ -244,21 +252,22 @@ class Cache(object):
             return True
         return False
 
-    def get_close_potentials(self):
-        # print("enter get close potentials")
-        sizeRatio = self.cacheSizeRatio
-        size = int(sizeRatio*self.ucln)
-        p = self.cache.p
-        pt1 = None
-        pt2 = None
-        for pt in self.samples:
-            if pt.size == size and pt.p==p+self.policy["deltap"]:
-                pt1 = pt
-            elif pt.size == size+self.policy["deltas"] and pt.p == p:
-                pt2 = pt
-            if pt1!=None and pt2!=None:
-                return (pt1, pt2)
-        return (pt1, pt2)
+    # def get_close_potentials(self):
+    #     # print("enter get close potentials")
+    #     sizeRatio = self.cacheSizeRatio
+    #     size = int(sizeRatio*self.ucln)
+    #     p = self.cache.p
+    #     pt1 = None
+    #     pt2 = None
+    #     for pt in self.samples:
+    #         if pt.size == size and pt.p==p+self.policy["deltap"]:
+    #             pt1 = pt
+    # 这个地方代码写的有问题
+    #         elif pt.size == size+self.policy["deltas"] and pt.p == p:
+    #             pt2 = pt
+    #         if pt1!=None and pt2!=None:
+    #             return (pt1, pt2)
+    #     return (pt1, pt2)
 
     def do_req(self, rw, blkid):
         random.seed()
@@ -269,20 +278,47 @@ class Cache(object):
         for s in self.samples:
             self.do_req_help(s, rw, blkid, roll)
         # print("self=", self)
+        # 命中率过低
         if self.exceed_throt(self.cache.hit):
+            return True
             # print("after self=", self)
-            (p1, p2) = self.get_close_potentials()
-            if p1==None and p2==None:
-                return (False, None, None)
-            elif p1==None:
-                return (True, (p2.size-self.cache.size, p2.p-self.cache.p), None)
-            elif p2==None:
-                return (True, (p1.size-self.cache.size, p1.p-self.cache.p), None)
-            if p1.get_hit() > p2.get_hit():
-                return (True, (p1.size-self.cache.size, p1.p-self.cache.p), (p2.size-self.cache.size, p2.p-self.cache.p))
-            return (True, (p2.size-self.cache.size, p2.p-self.cache.p), (p1.size-self.cache.size, p1.p-self.cache.p))
-        return (False, None, None)
+            # (p1, p2) = self.get_close_potentials()
+            # if p1==None and p2==None:
+            #     return (False, self.policy["deltas"], self.policy["deltap"])
+            # elif p1==None:
+            #     return (True, (p2.size-self.cache.size, p2.p-self.cache.p), self.policy["deltas"])
+            # elif p2==None:
+            #     return (True, (p1.size-self.cache.size, p1.p-self.cache.p), None)
+            # if p1.get_hit() > p2.get_hit():
+            #     return (True, (p1.size-self.cache.size, p1.p-self.cache.p), (p2.size-self.cache.size, p2.p-self.cache.p))
+            # return (True, (p2.size-self.cache.size, p2.p-self.cache.p), (p1.size-self.cache.size, p1.p-self.cache.p))
+        return False
 
+    def get_hit_scheme_help(self, scheme):
+        (s, p) = scheme
+        for item in self.samples:
+            if item.size == s and item.p == p:
+                return item.get_hit()
+        return 0
+
+    def get_hit_scheme(self):
+        newSize = self.cache.size + int(self.policy["deltas"]*self.ucln)
+        scheme1 = (newSize, self.cache.p)
+        hit1 = 0
+        if is_valid_sp(1.0*newSize/self.ucln, self.cache.p):
+            hit1 = self.get_hit_scheme_help(scheme1)
+        else:
+            scheme1 = None
+        newP = self.cache.p + self.policy["deltap"]
+        scheme2 = (self.cache.size, newP)
+        hit2 = 0
+        if is_valid_sp(self.cache.size, newP):
+            hit2 = self.get_hit_scheme_help(scheme2)
+        else:
+            scheme2 = None
+        if hit1 >= hit2:
+            return (scheme1, scheme2)
+        return (scheme2, scheme1)
 
     def change_config(self, s, p):
         # size = s+self.cache.size
@@ -291,7 +327,7 @@ class Cache(object):
         self.cache.change_p(p)
 
         self.cacheSizeRatio = round(1.0*s/self.ucln, 2)
-        print(self.trace, s, p, self.ucln, self.req, self.cacheSizeRatio, self.cacheSizeRatio>=1)
+        # print(self.trace, s, p, self.ucln, self.req, self.cacheSizeRatio, self.cacheSizeRatio>=1)
         assert self.cacheSizeRatio < 1
         # if self.cacheSizeRatio >= 1:
         #     print("trace", self.trace, ",sr=", self.cacheSizeRatio, ",s=", s, "p=", p)
@@ -302,7 +338,7 @@ class Cache(object):
     def get_potential(self):
         potentials = []
         results = []
-        # print("debug, len samples=", len(self.samples))
+        # print("debug", self.req, self.)
         for sample in self.samples:
             if self.exceed_throt(sample.get_hit()):
                 continue
@@ -331,6 +367,7 @@ class Cache(object):
     
     # 因为中间计算时把cache的update减去了，这里加回来
     def finish(self):
-        self.cache.update += self.lastUpdate
+        self.baseline.update += self.lastBaseUpdate
+        self.cache.update += self.lastCacheUpdate
         
                     

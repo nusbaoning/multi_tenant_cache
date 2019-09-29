@@ -4,6 +4,7 @@ import time
 import sys
 import math
 import random
+from mtc_total_test import load_lines
 from cache_algorithm import PLRU
 
 # add trace workflow:
