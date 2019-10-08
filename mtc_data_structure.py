@@ -109,20 +109,15 @@ class Device(object):
             return 1.0*write/self.g/time
         return size
     
-    # 判断给定方案的size是否越界，返回修改方案改变的s和p，如果不改变返回空值
-    def try_modify(self, scheme1, scheme2):
-        if scheme1!=None:            
-            (deltas, deltap) = scheme1
+    # 判断给定方案的size是否越界，返回修改方案改变的s和p (deltas, deltap)，如果不改变返回空值
+    def try_modify(self, schemel):
+        for scheme in schemel:
+            (deltas, deltap, hit) = scheme
             if deltas <= self.size - self.usedSize:
                 self.usedSize += deltas
                 return (deltas, deltap)
-        if scheme2==None:
-            return None
-        (deltas, deltap) = scheme2
-        if deltas <= self.size - self.usedSize:
-            self.usedSize += deltas
-            return (deltas, deltap)
         return None
+        
 
     # 选择最佳配置的帮助函数
     def get_best_config_help(self, potentials, selected, size, write):
@@ -158,17 +153,40 @@ class Device(object):
 
         
 
-    def get_best_config(self, potentials):
+    def get_best_config(self, potentials, size):
         self.minWrite = None
         self.configList = []
-        self.get_best_config_help(potentials, [], 0, 0)
+        mysize = size
+        self.get_best_config_help(potentials, [], size, 0)
         # print("size", len(self.configList))
         # for i in range(len(self.configList)):
         #     print("get_best_config结果：")
         #     print(i)
         #     item = self.configList[i]
         #     item.print_sample()
-        return self.configList
+        
+        # 分剩余的size
+
+        # 每个周期结束的时候，所有人按照比例分剩余的size
+        if mysize == 0:
+            tsize = 0
+            for item in self.configList:
+                tsize += item.size
+            ratio = 1.0*self.size/tsize
+            tsize = 0
+            # 可以直接修改size是因为周期结束，这个size的值之后也没用了
+            for item in self.configList:
+                newSize = min(self.size-tsize, int(ratio*item.get_size()))
+                item.size = newSize
+                tsize += newSize
+            return (self.configList, 0)
+
+
+        # 有人空间不够，把剩下的空间都直接分给不够的人
+        else:
+            return (self.configList, self.size-self.usedSize)
+
+        
 
         
 # mtc项目定制的缓存类
@@ -183,8 +201,10 @@ class Cache(object):
         self.ucln = ucln
         # policy = nrsamples, hit throt, +-s, +-p
         self.policy = policy
-        self.baseline = PLRU(int(bsizeRatio*ucln), p)
-        self.cache = PLRU(int(csizeRatio*ucln), p)
+        (bp, cp) = p
+        self.baseline = PLRU(int(bsizeRatio*ucln), bp)
+        self.baseline2 = PLRU(int(csizeRatio*ucln), cp)
+        self.cache = PLRU(int(csizeRatio*ucln), cp)
         self.req = 0
         self.lastBaseUpdate = 0
         self.lastCacheUpdate = 0
@@ -237,7 +257,7 @@ class Cache(object):
     #     h2 = c2.get_hit()
     #     return (h1-h2)/h1
 
-    def exceed_throt(self, hit):
+    def exceed_throt(self, hit, num):
         # 极端情况：某个trace在第一个周期内没有req，在get_potential中调用此函数
         # 需要加个条件判断
         if self.req == 0:
@@ -248,7 +268,7 @@ class Cache(object):
         h = 1.0*(baseline - hit)/self.req
         # if (hit!=baseline):            
         #     print("baseline", baseline, ",cache", hit, ",Dratio=", h)
-        if h > self.policy["throt"]:
+        if h > num:
             return True
         return False
 
@@ -274,12 +294,13 @@ class Cache(object):
         roll = random.random()
         self.req += 1
         self.do_req_help(self.baseline, rw, blkid, roll)
+        self.do_req_help(self.baseline2, rw, blkid, roll)
         self.do_req_help(self.cache, rw, blkid, roll)
         for s in self.samples:
             self.do_req_help(s, rw, blkid, roll)
         # print("self=", self)
         # 命中率过低
-        if self.exceed_throt(self.cache.hit):
+        if self.exceed_throt(self.cache.hit, self.policy["throt"]):
             return True
             # print("after self=", self)
             # (p1, p2) = self.get_close_potentials()
@@ -299,27 +320,43 @@ class Cache(object):
         for item in self.samples:
             if item.size == s and item.p == p:
                 return item.get_hit()
-        return 0
+        return -1
 
+    # 命中率不足时被调用，返回比当前配置和baseline命中率高一个级别的(deltas,dtp)列表
+    # 返回按照命中率从高到低排序的[(deltas, deltap, hit)]
     def get_hit_scheme(self):
-        newSize = self.cache.size + int(self.policy["deltas"]*self.ucln)
-        scheme1 = (newSize, self.cache.p)
-        hit1 = 0
-        if is_valid_sp(1.0*newSize/self.ucln, self.cache.p):
-            hit1 = self.get_hit_scheme_help(scheme1)
-        else:
-            scheme1 = None
-        newP = self.cache.p + self.policy["deltap"]
-        scheme2 = (self.cache.size, newP)
-        hit2 = 0
-        if is_valid_sp(self.cache.size, newP):
-            hit2 = self.get_hit_scheme_help(scheme2)
-        else:
-            scheme2 = None
-        if hit1 >= hit2:
-            return (scheme1, scheme2)
-        return (scheme2, scheme1)
+        l = []
+        for item in [self.cache, self.baseline]:
+            for change in [(int(self.policy["deltas"]*self.ucln),0), (0, self.policy["deltap"])]:
+                newSize = item.size
+                newP = item.p
+                while True:
 
+                    newSize += change[0]
+                    newP += change[1]
+                    # print(item.size, item.p)
+                    # print(newSize, newP)
+                    # print("end")
+
+                    if is_valid_sp(1.0*newSize/self.ucln, newP):
+                        hit = self.get_hit_scheme_help((newSize, newP))
+                        # 如果待改的配置不是potential，默认比item大1
+                        if hit == -1:
+                            hit = item.get_hit()+1
+                            l.append((newSize-self.cache.size, newP-self.cache.p, hit))
+                            break
+                        elif hit<=item.get_hit():
+                            continue
+                        else:
+                            l.append((newSize-self.cache.size, newP-self.cache.p, hit))
+                            break
+                    else: #s或者p已经加到越界
+                        break
+        # l不可能为空
+        l.sort(key=lambda item:item[2], reverse=True)
+        return l
+
+    # 确定更改，不存在更改无效的情况
     def change_config(self, s, p):
         # size = s+self.cache.size
         # p = p+self.cache.p
@@ -340,7 +377,7 @@ class Cache(object):
         results = []
         # print("debug", self.req, self.)
         for sample in self.samples:
-            if self.exceed_throt(sample.get_hit()):
+            if self.exceed_throt(sample.get_hit(),self.policy["throt"]/2):
                 continue
             potentials.append(sample)
             # 注释掉优化后加
@@ -361,8 +398,9 @@ class Cache(object):
         #     if not sign:
         #         # print("debug", potentials[i].get_size(), potentials[i].get_update(), potentials[i].get_p())
             # results.append(potentials[i])
-
-        results.append(self.cache)
+        if self.exceed_throt(self.cache.get_hit(),self.policy["throt"]/2):
+            results.append(self.cache)
+        results.append(self.baseline)
         return results
     
     # 因为中间计算时把cache的update减去了，这里加回来

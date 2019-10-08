@@ -26,11 +26,13 @@ class PLRU(object):
         self.head.prev = self.head
         self.p = p
         self.listSize = 1
+        self.latesthit = 0
         # Adjust the size
         self.change_size(size)
 
     def copy(self, ssd, size=None, p=None):
         self.hit = ssd.hit
+        self.latesthit = 0
         self.update = ssd.update
         if size == None:
             self.size = ssd.size
@@ -76,6 +78,7 @@ class PLRU(object):
     def is_hit(self, key):
         if key in self.ssd:
             self.hit += 1
+            self.latesthit += 1
             return True
         return False
 
@@ -84,6 +87,7 @@ class PLRU(object):
 
     def add_hit(self):
         self.hit += 1
+        self.latesthit += 1
 
     def get_update(self):
         return self.update

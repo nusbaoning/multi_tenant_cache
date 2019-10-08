@@ -131,8 +131,10 @@ def get_total_write(cacheDict, mode):
     for trace in cacheDict:
         if mode == "cache":
             w += cacheDict[trace].cache.get_update()
-        else:
+        elif mode == "base":
             w += cacheDict[trace].baseline.get_update()
+        else:
+            w += cacheDict[trace].baseline2.get_update()
     return w
 
 # 返回"cache"或者"base"模式下的总空间
@@ -141,8 +143,10 @@ def get_total_size(cacheDict, mode):
     for trace in cacheDict:
         if mode == "cache":
             s += cacheDict[trace].cache.size
-        else:
+        elif mode == "base":
             s += cacheDict[trace].baseline.size
+        else:
+            s += cacheDict[trace].baseline2.size
     return s
 
 # 输出所有结果
@@ -158,6 +162,10 @@ def print_result(traces, device, cacheDict, time, start, periodLength, sizeRate,
     size = get_total_size(cacheDict, "base")
     cost = device.get_cost(write, time, size)
     print("base", write, size, cost, sep=',', file=fp)
+    write = get_total_write(cacheDict, "base2")
+    size = get_total_size(cacheDict, "base2")
+    cost1 = device.get_cost(write, time, size)
+    print("base2", write, size, cost1, cost1/cost, sep=',', file=fp)
     write = get_total_write(cacheDict, "cache")
     size = get_total_size(cacheDict, "cache")
     cost2 = device.get_cost(write, time, device.size)
@@ -165,13 +173,16 @@ def print_result(traces, device, cacheDict, time, start, periodLength, sizeRate,
 
     for trace in traces:
         base = 1.0*cacheDict[trace].baseline.get_hit()/cacheDict[trace].req
+        base2 = 1.0*cacheDict[trace].baseline2.get_hit()/cacheDict[trace].req
         cache = 1.0*cacheDict[trace].cache.get_hit()/cacheDict[trace].req
-        print(trace, base, cache, (base-cache<=cacheDict[trace].policy["throt"]), sep=',', file=fp)
+        print(trace, base,  base2, cache, (base-cache<=cacheDict[trace].policy["throt"]), cacheDict[trace].req, sep=',', file=fp)
         # print(cacheDict[trace].baseline.get_parameters())
         (size, p, update, hit) = cacheDict[trace].baseline.get_parameters()
-        print("base", size, p, update, hit, file=fp)
+        print("base", size, p, update, hit, sep=',', file=fp)
+        (size, p, update, hit) = cacheDict[trace].baseline2.get_parameters()
+        print("base2", size, p, update, hit, sep=',', file=fp)
         (size, p, update, hit) = cacheDict[trace].cache.get_parameters()
-        print("cache", size, p, update, hit, cacheDict[trace].req, file=fp)
+        print("cache", size, p, update, hit, sep=',', file=fp)
 
 traces = ["prxy_0", "hm_0", "proj_3", "ts_0", "src2_0"]
 totalTimeLength = 5*3600*danwei
@@ -187,7 +198,7 @@ for i in range(0, 1):
     cacheDict = {}
     bsizeRate = 0.1
     csizeRate = 0.2
-    p = 1
+    p = (1, 0.5)
     policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01, "interval":int(0.5*danwei)}
     myupdate = {}
     dimdm = {}
@@ -209,7 +220,7 @@ for i in range(0, 1):
 
     print("Reqs = ", len(reqs))
     timestart = time.clock()
-    
+    debugCount = 0
 # for i in range(2,10):
     # 遍历每个req，进行处理
     for req in reqs:
@@ -233,15 +244,59 @@ for i in range(0, 1):
         
         # hit不足，触发更新操作
         if needInmediateM and mytime-dimdm[trace]>=policy["interval"]:
-            (scheme1, scheme2) = cacheDict[trace].get_hit_scheme()
-            temp = device.try_modify(scheme1, scheme2)
+            # print("enter hit scheme")
+            schemel = cacheDict[trace].get_hit_scheme()
+            temp = device.try_modify(schemel)
+            # device空间不足，需要强制更新全体缓存配置
             if temp == None:
-                pass
+                debugCount+=1
+                print("mydebugCount", debugCount)
+                mytrace = trace
+                potentials = []
+                for trace in traces:
+                    if trace==mytrace:                        
+                        continue
+                    l = cacheDict[trace].get_potential()
+                    potentials.append(l)
+                
+                for scheme in schemel:
+                    (dlts, dltp, thit) = scheme
+                    tsize = cacheDict[mytrace].cache.size
+                    (result, availSize) = device.get_best_config(potentials, tsize)
+                    assert(len(result)<=len(traces)-1)
+                    if result==None:
+                        continue
+                    sign = False
+                    for i in range(len(traces)):
+                        if traces[i] == mytrace:
+                            sign = True
+                            continue   
+                        if sign:
+                            item = result[i-1]
+                        else:
+                            item = result[i]                    
+                        deltas = item.get_size()-cacheDict[traces[i]].cache.size
+                        deltap = item.get_p()-cacheDict[traces[i]].cache.p
+                        device.try_modify([(deltas, deltap, None)])
+                        cacheDict[traces[i]].change_config(item.get_size(), item.get_p())
+                    
+                    # 把剩余的size都分给hit不足的cache
+                    for i in len(range(schemel)):
+                        (tsize, tp, thit) = schemel[i]
+                        schemel[i] = (availSize, tp, thit)
+                    temp = device.try_modify(schemel)
+                    (deltas, deltap) = temp
+                    s = deltas + cacheDict[trace].cache.get_size()
+                    p = deltap + cacheDict[trace].cache.get_p()
+                    cacheDict[trace].change_config(s, p)
+                    break
             else:
                 (deltas, deltap) = temp
                 s = deltas + cacheDict[trace].cache.get_size()
                 p = deltap + cacheDict[trace].cache.get_p()
+                # 在前面try_modify已经调用过
                 cacheDict[trace].change_config(s, p)
+
             # print("hit不足需要更新", "trace=", trace, cacheDict[trace].req,
              #    "baseline=", cacheDict[trace].baseline.get_hit(),
              #    "cache=", cacheDict[trace].cache.get_hit(),
@@ -250,6 +305,7 @@ for i in range(0, 1):
             # sys.exit(0)
         # 一个周期结束，修改所有cache配置
         if mytime - periodStart >= periodLength:
+            print("one period stop!", (mytime-start)/periodLength)
             periodStart = mytime
             potentials = []
             for trace in traces:
@@ -266,12 +322,15 @@ for i in range(0, 1):
             if len(potentials) < len(traces):
                 result = []
             else:
-                result = device.get_best_config(potentials)
+                (result, tsize) = device.get_best_config(potentials, 0)
                 assert(len(result)<=len(traces))
             if len(result) == 0:
                 continue
             for i in range(len(traces)):
                 # print("i=", i, ",trace=", traces[i], result[i].get_size(), result[i].get_p())
+                deltas = result[i].get_size()-cacheDict[traces[i]].cache.size
+                deltap = result[i].get_p()-cacheDict[traces[i]].cache.p
+                device.try_modify([(deltas, deltap, None)])
                 cacheDict[traces[i]].change_config(result[i].get_size(), result[i].get_p())
                 cacheDict[traces[i]].init_samples()
     for i in range(len(traces)):
