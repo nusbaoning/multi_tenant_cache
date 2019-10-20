@@ -140,8 +140,8 @@ class Device(object):
         items = potentials[0]
         tempSelected = copy.copy(selected)
         for item in items:
-            s = item.size
-            w = item.get_update()
+            s = item[0]
+            w = item[3]
             if size + s > self.size:
                 continue
             tempSelected.append(item)
@@ -169,17 +169,19 @@ class Device(object):
 
         # 每个周期结束的时候，所有人按照比例分剩余的size
         if mysize == 0:
+            result = []
             tsize = 0
             for item in self.configList:
-                tsize += item.size
+                tsize += item[0]
             ratio = 1.0*self.size/tsize
             tsize = 0
             # 可以直接修改size是因为周期结束，这个size的值之后也没用了
             for item in self.configList:
-                newSize = min(self.size-tsize, int(ratio*item.get_size()))
-                item.size = newSize
+                newSize = min(self.size-tsize, int(ratio*item[0]))
+                t = (newSize, item[1], item[2], item[3])
                 tsize += newSize
-            return (self.configList, 0)
+                result.append(t)
+            return (result, 0)
 
 
         # 有人空间不够，把剩下的空间都直接分给不够的人
@@ -360,12 +362,13 @@ class Cache(object):
     def change_config(self, s, p):
         # size = s+self.cache.size
         # p = p+self.cache.p
+        s = min(int(0.9*self.ucln), s)
         self.cache.change_size(s)
         self.cache.change_p(p)
 
-        self.cacheSizeRatio = round(1.0*s/self.ucln, 2)
+        # self.cacheSizeRatio = round(1.0*s/self.ucln, 2)
         # print(self.trace, s, p, self.ucln, self.req, self.cacheSizeRatio, self.cacheSizeRatio>=1)
-        assert self.cacheSizeRatio < 1
+        # assert self.cacheSizeRatio < 1
         # if self.cacheSizeRatio >= 1:
         #     print("trace", self.trace, ",sr=", self.cacheSizeRatio, ",s=", s, "p=", p)
         #     sys.exit(-1)
@@ -373,15 +376,15 @@ class Cache(object):
     # give potentials inside the hit range
     # remove bad ones (both s and p are larger)
     def get_potential(self):
-        potentials = []
+        # potentials = []
         results = []
         # print("debug", self.req, self.)
         for sample in self.samples:
-            if self.exceed_throt(sample.get_hit(),self.policy["throt"]/2):
+            if self.exceed_throt(sample.get_hit(),self.policy["hitThrot"]):
                 continue
-            potentials.append(sample)
+            # potentials.append(sample)
             # 注释掉优化后加
-            results.append(sample)
+            results.append((sample.get_size(), sample.get_p(), sample.get_hit(), sample.update))
         # print("sample", sample)
         # 这段是想要优化的，先注释掉吧
         # for i in range(len(potentials)):
@@ -398,9 +401,11 @@ class Cache(object):
         #     if not sign:
         #         # print("debug", potentials[i].get_size(), potentials[i].get_update(), potentials[i].get_p())
             # results.append(potentials[i])
-        if self.exceed_throt(self.cache.get_hit(),self.policy["throt"]/2):
-            results.append(self.cache)
-        results.append(self.baseline)
+        if self.exceed_throt(self.cache.get_hit(),self.policy["hitThrot"]):
+            sample = self.cache
+            results.append((sample.get_size(), sample.get_p(), sample.get_hit(), sample.update))
+        sample = self.baseline
+        results.append((sample.get_size(), sample.get_p(), sample.get_hit(), sample.update))
         return results
     
     # 因为中间计算时把cache的update减去了，这里加回来

@@ -1,11 +1,15 @@
+#coding=utf-8
 from __future__ import print_function
 import operator 
 import time
 import sys
 import math
 import random
-from mtc_total_test import load_lines
+from deal_file import parse_line
+from deal_file import load_lines
 from cache_algorithm import PLRU
+
+danwei = 10**7
 
 # add trace workflow:
 # add ucln
@@ -127,19 +131,19 @@ PERIODLEN = 10 ** 5
 logFilename = "./mtvt_result.csv"
 # SIZERATE = 0.1
 
-def parse_line(line, mode):
-    # print("line", line)
-    items = line.strip().split(' ')
-    # print("items", items)
-    if mode=="mtc":
-        time = int(items[0])
-        rw = int(items[1])
-        blkid = int(items[3])
-        return (time, rw, blkid)
-    else:
-        rw = int(items[0])
-        blkid = int(items[2])
-    return (rw, blkid)
+# def parse_line(line, mode):
+#     # print("line", line)
+#     items = line.strip().split(' ')
+#     # print("items", items)
+#     if mode=="mtc":
+#         time = int(items[0])
+#         rw = int(items[1])
+#         blkid = int(items[3])
+#         return (time, rw, blkid)
+#     else:
+#         rw = int(items[0])
+#         blkid = int(items[2])
+#     return (rw, blkid)
 
 # mode = 'w', deal with write reqs
 # mode = 'r', ignore write reqs
@@ -154,38 +158,30 @@ def load_file(traceID, typeID, sizerate=0.1, p=1, mode='w'):
     minTime = None
     maxTime = None
     print("load file finished")
-    if typeID == "mtc":
-        lines = lines[:-2]
-        minTime = parse_line(lines[0], typeID)[0]/(10**7)
-        maxTime = parse_line(lines[-1], typeID)[0]/(10**7)
     for line in lines:
-        items = line.strip().split(' ')
-        if typeID == "mtc":            
-            reqtype = int(items[1])
-            block = int(items[3])
-        else:
-            reqtype = int(items[0])
-            block = int(items[2])
+        items = line.strip().split(' ')        
+        reqtype = int(items[0])
+        blockid = int(items[2])
         if mode == 'r':
             if reqtype == 1:			
-                ssd.delete_cache(block)
+                ssd.delete_cache(blockid)
             else:	
                 readReq += 1	
                 if readReq % 1000000 == 0:
                     print(readReq)
                 req += 1
-                ssd.is_hit(block)				
-                ssd.update_cache(block)
+                ssd.is_hit(blockid)				
+                ssd.update_cache(blockid)
         else:
             req += 1
-            hit = ssd.is_hit(block)
+            hit = ssd.is_hit(blockid)
             if reqtype == 0:
                 readReq += 1
             if reqtype == 1 and hit:
                 ssd.add_update()
                 myupdate += 1
-            ssd.update_cache(block)
-            if not hit and ssd.get_top_n(1)==[block]:
+            ssd.update_cache(blockid)
+            if not hit and ssd.get_top_n(1)==[blockid]:
                 myupdate += 1
     fin.close()
     print(traceID, "size", size, p, "myupdate", myupdate)
@@ -211,9 +207,9 @@ def load_file_time(traceID, typeID, sizerate=0.1, p=1):
     for line in lines:
         items = line.split(' ')
         reqtype = int(items[0])
-        block = int(items[2])
+        blockid = int(items[2])
         if reqtype == 1:            
-            ssd.delete_cache(block)
+            ssd.delete_cache(blockid)
         else:       
             if readReq % PERIODLEN == 0 and readReq!=0:
                 localHitRatio = 1.0*(ssd.hit-historyHit)/(readReq-historyReq)
@@ -221,8 +217,8 @@ def load_file_time(traceID, typeID, sizerate=0.1, p=1):
                 historyReq = readReq
                 print(localHitRatio, sep=",", end=",", file=logFile)
             readReq += 1
-            ssd.is_hit(block)               
-            ssd.update_cache(block)
+            ssd.is_hit(blockid)               
+            ssd.update_cache(blockid)
     fin.close()
     print("size", size, p)
     print("total hit rate", 1.0*ssd.hit/readReq, ssd.update)
@@ -233,13 +229,46 @@ def load_file_time(traceID, typeID, sizerate=0.1, p=1):
 def load_metadata_dict(filename="metadata.csv"):
     fin = open(filename, 'r')
     lines = fin.readlines()
-    
     for line in lines:
         line = line.strip().split(',')
         traceID = line[0]
         ucln = int(line[9])
         uclnDict[traceID] = ucln
+
+
+def mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p):
+    lines = []
+    uclnDict = {}
+    req = 0
+    readReq = 0
+
     
+    load_lines(path, traceID, totalTimeLength, timeStart, lines, uclnDict)
+    size = int(sizerate*len(uclnDict))
+    # 稀疏周期，size过小
+    if size <= 100:
+        return 
+    print("size=", size)
+    ssd = PLRU(size, p)
+    for line in lines:
+        (time, rw, blockid) = parse_line(line, "gen")
+        req += 1
+        hit = ssd.is_hit(blockid)
+        if rw == 0:
+            readReq += 1
+        if rw == 1 and hit:
+            ssd.add_update()
+        ssd.update_cache(blockid)
+    
+    print(traceID, "size", size, p)
+    print("total hit rate", 1.0*ssd.hit/req, "update", ssd.update)
+    logFile = open(logFilename, "a")
+    print(traceID, timeStart/totalTimeLength, totalTimeLength/danwei, 
+        sizerate, size, p, 1.0*ssd.hit/req, ssd.update, req, 
+        round(1.0*readReq/req,3), sep=',', file=logFile)
+    logFile.close()
+    
+
 uclnDict = {
     "prxy_0": 25331,
 "usr_1": 319484 ,
@@ -254,19 +283,23 @@ uclnDict = {
 #     print(trace)
 #     load_file(trace, "cam", 0.1, 1, 'w')
 # traceList = ["prxy_0", "usr_1", "web_0"]
-traceList = ["prxy_0"]
-pList = [1]
-sList = [0.1]
+traceList = ["web_1", "wdev_0", "mds_0", "src2_0", "rsrch_0", "ts_0", "stg_0", "proj_3", 
+"web_0", "src2_1", "usr_1", "src1_2", "src2_2", "prn_0", "stg_1", 
+"prxy_0", "mds_1", "proj_0", "proj_4", "prn_1", "web_2"] 
+spList = [(0.1, 1), (0.2, 0.5), (0.5, 0.2)]
 # pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
 # sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
 # traceList = ["wdev_0", "hm_0", "prn_1", "prxy_0", "proj_3", "src2_0",
 # "ts_0", "usr_0"]
-for trace in traceList:
-    for p in pList:
-        for sizerate in sList:
+path = "/home/trace/ms-cambridge/part/"
+totalTimeLength = 5*3600*danwei
+timeStart = 0
+for i in range(0,30):
+    for traceID in traceList:
+        for (sizerate, p) in spList:   
+            timeStart = i*totalTimeLength
             start = time.clock()
-            typeID = "mtc"
-            load_file(trace, typeID, sizerate, p)
+            mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p)
             end = time.clock()
-            print(trace, typeID, sizerate, p, "consumed ", end-start, "s")
+            print(traceID, sizerate, p, "consumed ", end-start, "s")
     		# sys.exit(-1) 
