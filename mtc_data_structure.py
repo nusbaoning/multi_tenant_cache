@@ -93,6 +93,7 @@ class Device(object):
         self.g = g
         self.cacheDict = cacheDict
         self.usedSize = self.get_total_size()
+        print("initialized", self.size, self.usedSize)
 
     # 返回当前device被使用的size
     def get_total_size(self):
@@ -152,8 +153,9 @@ class Device(object):
 
 
         
-
+    # size是在命中率不足，强制调用的时候，要为命中率不足的trace留出的size
     def get_best_config(self, potentials, size):
+        print("size=", self.size, "usedSize=", self.usedSize)
         self.minWrite = None
         self.configList = []
         mysize = size
@@ -184,7 +186,8 @@ class Device(object):
             return (result, 0)
 
 
-        # 有人空间不够，把剩下的空间都直接分给不够的人
+        # 有人空间不够，把剩下的空间都直接分给不够的人，此时返回availSize没有用
+        # 如果要改，要把self.configList里面的size加起来
         else:
             return (self.configList, self.size-self.usedSize)
 
