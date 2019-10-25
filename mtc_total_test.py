@@ -275,9 +275,9 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
 
                     tsize = cacheDict[mytrace].cache.size+dlts
                     (result, availSize) = device.get_best_config(potentials, tsize)
-                    # print("availSize=", availSize)
+                    # print("len result=", len(result))
                     assert(len(result)<=len(traces)-1)
-                    if result==None:
+                    if result==None or len(result)==0:
                         continue
                     sign = False
                     for i in range(len(traces)):
@@ -303,8 +303,8 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                     (deltas, deltap) = temp
                     s = deltas + cacheDict[trace].cache.get_size()
                     p = deltap + cacheDict[trace].cache.get_p()
-                    print(temp)
-                    print(s, p)
+                    # print(temp)
+                    # print(s, p)
                     cacheDict[trace].change_config(s, p)
                     break
             else:
@@ -365,8 +365,9 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
 # starts = [20, 13, 23, 4, 23, 
 # 20, 4, 25, 20, 17,
 #  0]
-traces = ["hm_0", "prn_1", "ts_0", "rsrch_0", "src1_2"]
-starts = [20, 13, 23, 4, 23]
+traces = ["ts_0", "prn_1", "hm_0", "stg_1", "wdev_0",
+"src1_2", "rsrch_0"]
+starts = [23, 13, 20, 25, 17, 23, 4]
 totalTimeLength = 5*3600*danwei
 
 for i in range(len(starts)):
@@ -374,12 +375,11 @@ for i in range(len(starts)):
 
 
 unitLength = 1*danwei
-bsizeRate = 0.1
 
 policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01, "interval":int(1*danwei), "hitThrot":0.005}
 
 
-process(traces, starts, totalTimeLength, unitLength, bsizeRate, float(sys.argv[1]), policy)
+process(traces[:int(sys.argv[3])], starts, totalTimeLength, unitLength, float(sys.argv[1]), float(sys.argv[2]), policy)
 
 # for trace in traces:
 #     for cache in cacheDict[trace].samples:
