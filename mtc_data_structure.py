@@ -79,7 +79,7 @@ danwei = 10**7
 def is_valid_sp(sizeRatio, p):
     if p > 1 or p <= 0:
         return False
-    if sizeRatio > 0.8 or sizeRatio < 0.1:
+    if sizeRatio > 1 or sizeRatio < 0.1:
         return False
     return True
 
@@ -106,7 +106,7 @@ class Device(object):
     # 返回给定的时间和写入量下device的单位时间内租用size大小的缓存，默认k1为1的情况下的cost
     def get_cost(self, write, time, size):
         # print("write=", write, ",size=", size, ",g=", self.g, ",time=", time)
-        if write > self.size * self.g * time:
+        if write > 1.0*self.size * self.g * time:
             return 1.0*write/self.g/time
         return size
     
@@ -116,6 +116,8 @@ class Device(object):
             (deltas, deltap, hit) = scheme
             if deltas <= self.size - self.usedSize:
                 self.usedSize += deltas
+                assert self.usedSize>=0
+                assert self.usedSize<=self.size
                 return (deltas, deltap)
         return None
         
@@ -155,7 +157,7 @@ class Device(object):
         
     # size是在命中率不足，强制调用的时候，要为命中率不足的trace留出的size
     def get_best_config(self, potentials, size):
-        print("size=", self.size, "usedSize=", self.usedSize)
+        # print("size=", self.size, "usedSize=", self.usedSize)
         self.minWrite = None
         self.configList = []
         mysize = size
@@ -208,7 +210,7 @@ class Cache(object):
         self.policy = policy
         (bp, cp) = p
         self.baseline = PLRU(int(bsizeRatio*ucln), bp)
-        self.baseline2 = PLRU(int(csizeRatio*ucln), cp)
+        self.baseline2 = PLRU(int(csizeRatio*ucln), bp)
         self.cache = PLRU(int(csizeRatio*ucln), cp)
         self.req = 0
         self.lastBaseUpdate = 0
@@ -365,7 +367,7 @@ class Cache(object):
     def change_config(self, s, p):
         # size = s+self.cache.size
         # p = p+self.cache.p
-        s = min(int(0.9*self.ucln), s)
+        s = min(int(self.ucln), s)
         self.cache.change_size(s)
         self.cache.change_p(p)
 

@@ -11,8 +11,9 @@ from deal_file import parse_line
 path = "/home/trace/ms-cambridge/part/"
 # path = "./"
 danwei = 10**7
+g = 0.014/3600/danwei
 traceFileName = None
-version=4.2
+version=4.5
 # The program is used to simulate the total test for multi-tenent cache
 # input: the output of handle_csv_time_partition of cambridge.py
 #        (which means the req files are 1hr each)
@@ -192,9 +193,54 @@ def print_result(traces, device, cacheDict, time, starts, periodLength, sizeRate
         print("base2", size, p, update, hit, sep=',', file=fp)
         (size, p, update, hit) = cacheDict[trace].cache.get_parameters()
         print("cache", size, p, update, hit, sep=',', file=fp)
+    fp.close()
+
+# 记录过程中的重要参数，输出调参过程
+def record_process(watchDict, cacheDict):
+    # print("before", watchDict)
+    for trace in cacheDict.keys():
+        
+        l = []
+        cache = cacheDict[trace]
+        for item in [cache.baseline, cache.baseline2, cache.cache]:
+            paras = item.get_parameters()
+            l.append(paras)
+        if trace not in watchDict:
+            watchDict[trace] = []
+        watchDict[trace].append(l)
+    # print("after", watchDict)
+
+
+def print_watch(watchDict, cacheDict, time):
+    logfile = "./total_result.csv"
+    fp = open(logfile, 'a')
+    l = ["base", "base2", "cache"]
+    print(watchDict)
+    for trace in cacheDict.keys():
+        print("Trace=", trace)
+        # print(watchDict[trace])
+        print(trace, file=fp)
+        lastupdate = 0
+        for item in watchDict[trace]:
+            for i in range(3):
+                (size, p, update, hit) = item[i]
+                if i==1:
+                    myupdate = update-lastupdate
+                    lastupdate = update
+                else:
+                    myupdate = update
+                assert myupdate>=0
+                # print(lastupdate, myupdate, update)
+                if myupdate > 1.0*size * g * time:
+                    cost = 1.0*myupdate/g/time
+                else:
+                    cost = size
+                print(l[i], size, p, hit, myupdate, cost, sep=",", file=fp)
+    fp.close()
+            
 
 def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, policy):
-    
+    global g
     uclnDict = generate_reqs(traces, totalTimeLength, unitLength, starts)
     for i in range(len(traces)):
         print(traces[i], "ucln=", len(uclnDict[i]))
@@ -213,8 +259,8 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
     size = get_total_size(cacheDict, "base")
     # g是1单位时间(10^-7s)内每个块的基准写入次数
     # k1没有放进来，假设是1，租用1B1单位时间的价格为1
-    g = 0.014/3600/danwei
-    device = mtc_data_structure.Device(int(math.ceil(csizeRate/bsizeRate)*size), g, cacheDict)
+    device = mtc_data_structure.Device(get_total_size(cacheDict, "cache"), g, cacheDict)
+    # print("device size=", device.size)
     # print(csizeRate, bsizeRate, size, int(csizeRate/bsizeRate)*size, device.size)
     periodStart = 0
     periodLength = 60*danwei
@@ -275,11 +321,12 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
 
                     tsize = cacheDict[mytrace].cache.size+dlts
                     (result, availSize) = device.get_best_config(potentials, tsize)
-                    # print("len result=", len(result))
+                    # print("len resurlt=", len(result))
                     assert(len(result)<=len(traces)-1)
                     if result==None or len(result)==0:
                         continue
                     sign = False
+                    device.usedSize = cacheDict[mytrace].cache.size
                     for i in range(len(traces)):
                         if traces[i] == mytrace:
                             sign = True
@@ -288,9 +335,8 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                             item = result[i-1]
                         else:
                             item = result[i]                    
-                        deltas = item[0]-cacheDict[traces[i]].cache.size
-                        deltap = item[1]-cacheDict[traces[i]].cache.p
-                        device.try_modify([(deltas, deltap, None)])
+                        
+                        device.try_modify([(item[0], item[1], None)])
                         cacheDict[traces[i]].change_config(item[0], item[1])
                         # print(item, deltas, deltap)
                     # 把剩余的size都分给hit不足的cache
@@ -323,6 +369,12 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
         # 一个周期结束，修改所有cache配置
         if mytime - periodStart >= periodLength:
             print("one period stop!", mytime/periodLength)
+            if policy["watch"][0]:
+                if policy["watch"][1] < mytime:
+                    break
+                else:
+                    record_process(policy["watch"][2], cacheDict)
+                
             periodStart = mytime
             potentials = []
             for trace in traces:
@@ -343,19 +395,23 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                 assert(len(result)<=len(traces))
             if len(result) == 0:
                 continue
+            # 防止修改方案失效
+            device.usedSize = 0
             for i in range(len(traces)):
                 # print("i=", i, ",trace=", traces[i], result[i].get_size(), result[i].get_p())
-                deltas = result[i][0]-cacheDict[traces[i]].cache.size
-                deltap = result[i][1]-cacheDict[traces[i]].cache.p
-                device.try_modify([(deltas, deltap, None)])
+                temp = device.try_modify([(result[i][0], result[i][1], None)])
+                assert temp!=None
                 cacheDict[traces[i]].change_config(result[i][0], result[i][1])
                 cacheDict[traces[i]].init_samples()
             print("after config", device.usedSize)
+    if policy["watch"][0]:
+        print_watch(policy["watch"][2], cacheDict, periodLength)
     for i in range(len(traces)):
         cacheDict[traces[i]].finish()
     runTime = time.clock()-timestart
     print("consumed", runTime, "s")
     print_result(traces, device, cacheDict, totalTimeLength, starts, periodLength, (bsizeRate, csizeRate), policy, runTime)
+    
     os.remove(traceFileName)
 
 # 因为允许不同trace有不同的开始，所以所有trace时间都对准为0
@@ -376,7 +432,8 @@ for i in range(len(starts)):
 
 unitLength = 1*danwei
 
-policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01, "interval":int(1*danwei), "hitThrot":0.005}
+policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01, 
+"interval":int(1*danwei), "hitThrot":0.005, "watch":(True, 600*danwei, {})}
 
 
 process(traces[:int(sys.argv[3])], starts, totalTimeLength, unitLength, float(sys.argv[1]), float(sys.argv[2]), policy)

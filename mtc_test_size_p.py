@@ -10,7 +10,7 @@ from deal_file import load_lines
 from cache_algorithm import PLRU
 
 danwei = 10**7
-
+g = 0.014/3600/danwei
 # add trace workflow:
 # add ucln
 # add path
@@ -262,10 +262,17 @@ def mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p):
     
     print(traceID, "size", size, p)
     print("total hit rate", 1.0*ssd.hit/req, "update", ssd.update)
+    global g
+
+    if ssd.update > 1.0*size * g * totalTimeLength:
+        cost = 1.0*ssd.update/g/totalTimeLength
+    else:
+        cost = size
+    print(ssd.update, size, g*totalTimeLength, 1.0*size * g * totalTimeLength, 1.0*ssd.update/size, cost)
     logFile = open(logFilename, "a")
     print(traceID, timeStart/totalTimeLength, totalTimeLength/danwei, 
         sizerate, size, p, 1.0*ssd.hit/req, ssd.update, req, 
-        round(1.0*readReq/req,3), sep=',', file=logFile)
+        round(1.0*readReq/req,3), cost, sep=',', file=logFile)
     logFile.close()
     
 
@@ -283,23 +290,25 @@ uclnDict = {
 #     print(trace)
 #     load_file(trace, "cam", 0.1, 1, 'w')
 # traceList = ["prxy_0", "usr_1", "web_0"]
-traceList = ["web_1", "wdev_0", "mds_0", "src2_0", "rsrch_0", "ts_0", "stg_0", "proj_3", 
-"web_0", "src2_1", "usr_1", "src1_2", "src2_2", "prn_0", "stg_1", 
-"prxy_0", "mds_1", "proj_0", "proj_4", "prn_1", "web_2"] 
-spList = [(0.1, 1), (0.2, 0.5), (0.5, 0.2)]
+# traceList = ["web_1", "wdev_0", "mds_0", "src2_0", "rsrch_0", "ts_0", "stg_0", "proj_3", 
+# "web_0", "src2_1", "usr_1", "src1_2", "src2_2", "prn_0", "stg_1", 
+# "prxy_0", "mds_1", "proj_0", "proj_4", "prn_1", "web_2"] 
+spList = [(2,1)]
 # pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
 # sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
-# traceList = ["wdev_0", "hm_0", "prn_1", "prxy_0", "proj_3", "src2_0",
-# "ts_0", "usr_0"]
+traceList = ["ts_0", "prn_1", "hm_0", "stg_1", "wdev_0",
+"src1_2", "rsrch_0"]
+starts = [23, 13, 20, 25, 17, 23, 4]
 path = "/home/trace/ms-cambridge/part/"
 totalTimeLength = 5*3600*danwei
 timeStart = 0
-for i in range(0,30):
-    for traceID in traceList:
-        for (sizerate, p) in spList:   
-            timeStart = i*totalTimeLength
-            start = time.clock()
-            mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p)
-            end = time.clock()
-            print(traceID, sizerate, p, "consumed ", end-start, "s")
-    		# sys.exit(-1) 
+for i in range(0,7):
+    traceID = traceList[i]
+
+    for (sizerate, p) in spList:   
+        timeStart = starts[i]*totalTimeLength
+        start = time.clock()
+        mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p)
+        end = time.clock()
+        print(traceID, sizerate, p, "consumed ", end-start, "s")
+		# sys.exit(-1) 
