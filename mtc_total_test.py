@@ -11,9 +11,13 @@ from deal_file import parse_line
 path = "/home/trace/ms-cambridge/part/"
 # path = "./"
 danwei = 10**7
+lifespanMonths=36
+# g = 10^-7s内一个块允许的写入次数
 g = 0.014/3600/danwei
+# 摩尔系数，按照摩尔定律18个月翻一倍，计算出来的1个月涨多少，到时候向下取整
+molc = math.exp(math.log(2)/18)
 traceFileName = None
-version=4.5
+version=4.6
 # The program is used to simulate the total test for multi-tenent cache
 # input: the output of handle_csv_time_partition of cambridge.py
 #        (which means the req files are 1hr each)
@@ -202,14 +206,38 @@ def record_process(watchDict, cacheDict):
         
         l = []
         cache = cacheDict[trace]
-        for item in [cache.baseline, cache.baseline2, cache.cache]:
+        templ = [cache.baseline, cache.baseline2, cache.cache]
+        for i in range(len(templ)):
+            item = templ[i]
             paras = item.get_parameters()
+            (size, p, update, hit) = paras
+            if i==0:
+                update += cache.lastBaseUpdate
+            if i==2:
+                update += cache.lastCacheUpdate
+            paras = (size, p, update, hit)
             l.append(paras)
         if trace not in watchDict:
             watchDict[trace] = []
         watchDict[trace].append(l)
     # print("after", watchDict)
 
+def get_cost(write, time, size):
+        # print("write=", write, ",size=", size, ",g=", self.g, ",time=", time)
+    unitWrite = 1.0*write/size/time
+    # print(unitWrite, unitWrite>self.g)
+    # 写入量超出额定写入量
+    if unitWrite > g:
+        cost = 0
+        lifespan = lifespanMonths/(unitWrite/g)
+        for i in range(int(math.ceil(lifespanMonths/lifespan))):
+            tcost = size * (molc**int(lifespan*i))
+            cost += tcost
+            # print("debug4.6", "tcost=", tcost, "\ti=", i)
+
+    else:
+        cost = size
+    return cost
 
 def print_watch(watchDict, cacheDict, time):
     logfile = "./total_result.csv"
@@ -220,21 +248,18 @@ def print_watch(watchDict, cacheDict, time):
         print("Trace=", trace)
         # print(watchDict[trace])
         print(trace, file=fp)
-        lastupdate = 0
+        lastupdate = [0,0,0]
         for item in watchDict[trace]:
             for i in range(3):
                 (size, p, update, hit) = item[i]
-                if i==1:
-                    myupdate = update-lastupdate
-                    lastupdate = update
-                else:
-                    myupdate = update
+                # if i==1:
+                myupdate = update-lastupdate[i]
+                lastupdate[i] = update
+                # else:
+                #     myupdate = update
                 assert myupdate>=0
                 # print(lastupdate, myupdate, update)
-                if myupdate > 1.0*size * g * time:
-                    cost = 1.0*myupdate/g/time
-                else:
-                    cost = size
+                cost = get_cost(myupdate, time, size)
                 print(l[i], size, p, hit, myupdate, cost, sep=",", file=fp)
     fp.close()
             
@@ -248,6 +273,7 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
     # init
     cacheDict = {}
     p = (1, round(bsizeRate/csizeRate, 1))
+    print(p)
     dimdm = {}
     for i in range(len(traces)):    
         trace = traces[i]
@@ -372,7 +398,8 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
             if policy["watch"][0]:
                 if policy["watch"][1] < mytime:
                     break
-                else:
+                # else:
+                elif int(mytime/periodLength)%policy["watch"][-1]==0:
                     record_process(policy["watch"][2], cacheDict)
                 
             periodStart = mytime
@@ -405,12 +432,12 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
                 cacheDict[traces[i]].init_samples()
             print("after config", device.usedSize)
     if policy["watch"][0]:
-        print_watch(policy["watch"][2], cacheDict, periodLength)
+        print_watch(policy["watch"][2], cacheDict, policy["watch"][-1]*periodLength)
     for i in range(len(traces)):
         cacheDict[traces[i]].finish()
     runTime = time.clock()-timestart
     print("consumed", runTime, "s")
-    print_result(traces, device, cacheDict, totalTimeLength, starts, periodLength, (bsizeRate, csizeRate), policy, runTime)
+    (traces, device, cacheDict, totalTimeLength, starts, periodLength, (bsizeRate, csizeRate), policy, runTime)
     
     os.remove(traceFileName)
 
@@ -433,10 +460,74 @@ for i in range(len(starts)):
 unitLength = 1*danwei
 
 policy = {"nrsamples":3, "deltas":0.02, "deltap":0.1, "throt":0.01, 
-"interval":int(1*danwei), "hitThrot":0.005, "watch":(True, 600*danwei, {})}
+"interval":int(1*danwei), "hitThrot":0.005, "watch":(True, 1200*danwei, {}, 10)}
 
 
-process(traces[:int(sys.argv[3])], starts, totalTimeLength, unitLength, float(sys.argv[1]), float(sys.argv[2]), policy)
+process(traces, starts, totalTimeLength, unitLength, float(sys.argv[1]), float(sys.argv[2]), policy)
+
+# l = [(1669659,73707),
+# (778871  ,110556),
+# (739300  ,147409),
+# (739995  ,184264),
+# (678284  ,221117),
+# (692262  ,257975),
+# (800582  ,294825),
+# (682596  ,331681),
+# (698915  ,368532)]
+
+# l2 = [
+# (73707, 1669659),
+# (110560,  1611477),
+# (147416,  1563094),
+# (184268,  1477185),
+# (221123,  1464413),
+# (257978,  1450944),
+# (294833,  1434010),
+# (331685,  1420296),
+# (368542,  1413590)
+# ]
+
+# l3 = [
+# (3360 ,  11424),
+# (10081,  7886),
+# (4032 ,  5920),
+# (3360 ,  121),
+# (10081,  121),
+# (19283,  87),
+# (3360 ,  122),
+# (10081,  122),
+# (16359,  78
+# )(3360 ,  154
+# )(10081,  154)
+# (15057,  106)
+# (3360 ,  197)
+# (10081,  197)
+# (14739,  123)
+# (3360 ,  796)
+# (10081,  796)
+# (11645,  418)
+# (3360 ,  254)
+# (10081,  254)
+# (15134,  148)
+# (3360 ,  123)
+# (10081,  123)
+# (10363,  78
+# )(3360 ,  671
+# )(10081,  671),
+# (8824 ,  394),
+# ]
+
+# costl = []
+# # for (write, size) in l:
+# for (size, write) in l2:
+#     # print("write=", write, "size=", size)
+#     device = mtc_data_structure.Device(size, g, {})
+#     cost = device.get_cost(write, totalTimeLength, size)
+    
+#     costl.append(cost)
+#     print(cost/costl[0])
+# print(costl)
+# print(costl[1]/costl[0], costl[2]/costl[0])
 
 # for trace in traces:
 #     for cache in cacheDict[trace].samples:

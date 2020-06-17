@@ -108,7 +108,7 @@ def handle_csv_time_partition(fileid, filename, timeLength=3600):
             timeStart += timeLength*danwei
             timeEnd += timeLength*danwei
             # print(i, timeStart/danwei, timeEnd/danwei)
-    pfn = "/home/trace/ms-cambridge/part/" + fileid + "_" + str(nrpar) + ".req"
+    pfn = "/home/trace/ms-cambridge/part/" + fileid + "_" + str(nrpar+1) + ".req"
     handle_lines(pfn, lines[idxStart:], timeZero)
     infile.close()
 
@@ -381,9 +381,12 @@ def handle_req(fileid, filename):
         lba[2][1]-lba[2][0]+1, lba[0][1]-lba[0][0]+1, lba[1][1]-lba[1][0]+1, sep=',', file=logFile)
     fin.close()
 
-# l = ["usr_1"] 
-l = ["prxy_0", "hm_0", "proj_3", "ts_0", "src2_0", "usr_0",  "wdev_0", "prn_1", ]
-# l = ["prn_1", "prxy_0", "hm_0", "proj_3", "usr_0", "ts_0", "wdev_0"]
+# l2 = ["web_1", "wdev_0", "mds_0", "src2_0", "rsrch_0", "ts_0", "stg_0", "proj_3", 
+# "hm_0", "web_0", "src2_1", "usr_1", "src1_2", "src2_2", "prn_0", "stg_1", 
+# "prxy_0", "mds_1", "proj_0", "proj_4", "prn_1", "web_2"] 
+# l = ["prxy_0", "hm_0", "proj_3", "ts_0", "src2_0", "usr_0",  "wdev_0", "prn_1" ]
+traces = ["ts_0", "prn_1", "hm_0", "stg_1", "wdev_0",
+"src1_2", "rsrch_0"]
 # for root, dirs, files in os.walk('/home/trace/ms-cambridge'):  
 # for i in l:
 # mode = "warm"
@@ -414,7 +417,8 @@ l = ["prxy_0", "hm_0", "proj_3", "ts_0", "src2_0", "usr_0",  "wdev_0", "prn_1", 
 #     # handle_csv_time(i, "/home/trace/ms-cambridge/" + i + ".csv", 0, 3600*10000000)            
 #             end = time.clock()
 #             print(i, order, timeLength/danwei, start, end, "consumed ", end-start, "s")
-for i in l:
+for i in traces:
+ 
     handle_csv_time_partition(i, "/home/trace/ms-cambridge/" + i + ".csv", 3600)                 
                  
 # handle_req("probuild", "/home/trace/" + "production-build00-1-4K.req")

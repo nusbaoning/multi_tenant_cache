@@ -3,8 +3,10 @@ from cache_algorithm import PLRU
 import random
 import sys
 import copy
+import math
 
 danwei = 10**7
+molc = math.exp(math.log(2)/18)
 
 # 本来想用sampleCache的shadow来模拟候选cache
 # 后面发现结果很容易不准，暂时不用这个方案了，等后期实在内存不够运行太慢了再说
@@ -88,12 +90,13 @@ def is_valid_sp(sizeRatio, p):
 class Device(object):
     """docstring for Device"""
 
-    def __init__(self, size, g, cacheDict):
+    def __init__(self, size, g, cacheDict, lifespanMonths=36):
         self.size = size
         self.g = g
         self.cacheDict = cacheDict
+        self.lifespanMonths = 36
         self.usedSize = self.get_total_size()
-        print("initialized", self.size, self.usedSize)
+        # print("initialized", self.size, self.usedSize)
 
     # 返回当前device被使用的size
     def get_total_size(self):
@@ -106,9 +109,20 @@ class Device(object):
     # 返回给定的时间和写入量下device的单位时间内租用size大小的缓存，默认k1为1的情况下的cost
     def get_cost(self, write, time, size):
         # print("write=", write, ",size=", size, ",g=", self.g, ",time=", time)
-        if write > 1.0*self.size * self.g * time:
-            return 1.0*write/self.g/time
-        return size
+        unitWrite = 1.0*write/size/time
+        # print(unitWrite, unitWrite>self.g)
+        # 写入量超出额定写入量
+        if unitWrite > self.g:
+            cost = 0
+            lifespan = self.lifespanMonths/(unitWrite/self.g)
+            for i in range(int(math.ceil(self.lifespanMonths/lifespan))):
+                tcost = size * (molc**int(lifespan*i))
+                cost += tcost
+                # print("debug4.6", "tcost=", tcost, "\ti=", i)
+
+        else:
+            cost = size
+        return cost
     
     # 判断给定方案的size是否越界，返回修改方案改变的s和p (deltas, deltap)，如果不改变返回空值
     def try_modify(self, schemel):
@@ -210,8 +224,11 @@ class Cache(object):
         self.policy = policy
         (bp, cp) = p
         self.baseline = PLRU(int(bsizeRatio*ucln), bp)
+        # print("base", int(bsizeRatio*ucln), bp)
         self.baseline2 = PLRU(int(csizeRatio*ucln), bp)
+        # print("base2", int(csizeRatio*ucln), bp)
         self.cache = PLRU(int(csizeRatio*ucln), cp)
+        # print("cache", int(csizeRatio*ucln), cp)
         self.req = 0
         self.lastBaseUpdate = 0
         self.lastCacheUpdate = 0
