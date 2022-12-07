@@ -1,5 +1,5 @@
 from __future__ import print_function
-from mtc_test_size_p import PLRU
+from cache_algorithm import PLRU
 import time
 import sys
 import random
@@ -10,6 +10,42 @@ import random
 #function: no limit of total cache capacity
 # every trace can be treated separately
 # use sample ssd to find min cost
+
+class Log(object):
+    """docstring for Log"""
+    def __init__(self, parameters):
+        self.reqNum = 0
+        self.periodNum = 0
+        self.periodLength = parameters.periodLength 
+        self.start = time.clock()
+        # l is list of delta probs, example: [-0.1, 0.1, -0.2, 0.2]
+        # self.l = parameters.l
+        self.parameters = parameters
+        self.pscost = 0
+        self.cost = 0
+        self.pastWrite = 0
+        self.l = []
+
+    def tick(self):
+        self.reqNum += 1
+        if self.reqNum % self.periodLength == 0:
+            self.periodNum += 1
+            return True
+        return False
+
+    def print(self, ssd1, ssd2):
+        print(ssd1.get_hit(), ssd1.get_update())
+        print(ssd2.get_hit(), ssd2.get_update())
+        print(ssd1.get_size()*ssd1.get_p(), ssd1.get_size()*ssd1.get_update())
+        print(self.cost)
+
+    def record(self, cost, p, s, write):
+        #给的cost是p*s，准确的cost是s*写入速率
+        self.pscost += cost
+        self.cost += s*(write-self.pastWrite)
+        self.pastWrite = write
+        self.l.append((self.periodNum, cost, p, s, self.pscost, self.cost))
+
 
 class SamplePolicy(object):
     """docstring for samplePolicy"""
@@ -123,7 +159,7 @@ class SampleSSDs(object):
     def __init__(self, parameters, ssd):
         self.ssds = []
         self.samplePolicy = parameters.samplePolicy
-        l = samplePolicy.getSamples(parameters)
+        l = self.samplePolicy.getSamples(parameters)
         for (p,s) in l:
             self.ssds.append(SampleSSD(p,s,ssd))
     
@@ -185,7 +221,7 @@ def modify_config(samples, ssd, baseline, parameters, log):
         ssd.change_size(s)
         log.record(cost, p, s)
     else:
-        log.record(None, None, None)
+        log.record(None, ssd.p, None)
 
 
 def do_single_trace(traceName, parameters):

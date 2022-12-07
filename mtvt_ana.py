@@ -52,9 +52,26 @@ class dLookup():
     def find_hr(self, trace, p, s):
         return self.dLookup[(trace, p, s)]
             
-        
+def load_mtvt_file_wsh(filename):
+    d = {}
+    with open(filename, 'rb') as csvfile:
+        reader = csv.reader(csvfile, delimiter=',')
+        for row in reader:
+            trace = row[0]
+            write = int(row[5])
+            p = float(row[1])
+            size = int(row[3])
+            hr = 100*float(row[4])
+            key = trace
+            value = (size, p, write, hr)
+            if key in d and value not in d[key]:
+                d[key].append(value)
+            else:
+                d[key] = [value]
+    csvfile.close()
+    return d
 
-
+# return d, dict, key = trace, value = (p, size, hr)
 def load_mtvt_file(filename):
     d = {}
     with open(filename, 'rb') as csvfile:
@@ -186,61 +203,82 @@ def lookup_matrix(dLookup):
             print(dLookup.find_hr(trace, pList[i], sList[j]), end=",")
         print()
 
-filename = "mtvt_result.csv"
-d = load_mtvt_file(filename)    
-hitRange = 1
-dLookup = dLookup(d)
-indexList = []
-costList = []
-pSmallList = []
-recordList = []
-for trace in traceMtvtDict:
-    print(trace)
-    l = traceMtvtDict[trace]
-    for hr in l:
-        (defaults, allcons) = dLookup.find_default(trace, hr, hitRange)
-        print("defaults", defaults)
-        print("allcons", allcons)
-        templ = []        
-        for cons in allcons:
-            (p, s) = cons
-            templ.append((p*s, p, s))
-        templ.sort()
-        print("templ", templ)
-        print("hr", hr)
-        for default in defaults:
-            (p, s) = default
-            # p is too small
-            if p < 0.5:
-                pSmallList.append((trace, p, s))
-                continue
-            bestCon = get_config(trace, dLookup, default, hr, hitRange, 3, 3)
-            index = templ.index(bestCon)
-            print(bestCon, index)
-            indexList.append(index)
-            recordList.append((trace, default, hr, bestCon, index))
-            costList.append(bestCon[0]/(default[0]*default[1]))
-            # sys.exit(0)
-print(indexList)
-print(recordList)
-print(indexList.count(0), indexList.count(1), len(indexList))
-print(1.0*sum(indexList)/len(indexList))
-print(costList)
-print(sum(costList)/len(costList))
-print(pSmallList)
-# while(True):
-#     lookup_matrix(dLookup)
-# trace = "proj_3"
-# hr = 36
 
-# (defaults, allcons) = dLookup.find_default(trace, hr, hitRange)
-# print("defaults", defaults)
-# print("allcons", allcons)
-# templ = []        
-# for cons in allcons:
-#     (p, s) = cons
-#     templ.append((p*s, p, s))
-# templ.sort()
-# print("templ", templ)
-# print("hr", hr)
-# get_config(trace, dLookup, (1, 0.08), hr, 1, 3, 3)
+# def original_pmuls():
+    
+#     filename = "mtvt_result.csv"
+#     d = load_mtvt_file(filename)    
+#     hitRange = 1
+#     dLookup = dLookup(d)
+#     indexList = []
+#     costList = []
+#     pSmallList = []
+#     recordList = []
+#     for trace in traceMtvtDict:
+#         print(trace)
+#         l = traceMtvtDict[trace]
+#         for hr in l:
+#             (defaults, allcons) = dLookup.find_default(trace, hr, hitRange)
+#             print("defaults", defaults)
+#             print("allcons", allcons)
+#             templ = []        
+#             for cons in allcons:
+#                 (p, s) = cons
+#                 templ.append((p*s, p, s))
+#             templ.sort()
+#             print("templ", templ)
+#             print("hr", hr)
+#             for default in defaults:
+#                 (p, s) = default
+#                 # p is too small
+#                 if p < 0.5:
+#                     pSmallList.append((trace, p, s))
+#                     continue
+#                 bestCon = get_config(trace, dLookup, default, hr, hitRange, 3, 3)
+#                 index = templ.index(bestCon)
+#                 print(bestCon, index)
+#                 indexList.append(index)
+#                 recordList.append((trace, default, hr, bestCon, index))
+#                 costList.append(bestCon[0]/(default[0]*default[1]))
+#                 # sys.exit(0)
+#     print(indexList)
+#     print(recordList)
+#     print(indexList.count(0), indexList.count(1), len(indexList))
+#     print(1.0*sum(indexList)/len(indexList))
+#     print(costList)
+#     print(sum(costList)/len(costList))
+#     print(pSmallList)
+
+
+def get_cost():
+    pass
+
+def new_sorwrite():
+    filename = "mtvt_result.csv"
+    d = load_mtvt_file_wsh(filename) 
+    del d["prn_1"]
+    hitRange = 1
+    baseline = (0, 0)
+    # 7%, 10%, 20%
+    for sizeIdx in [3, 6, 8]: 
+        result = []
+        for trace in d:
+            tracePotential = []
+            value = d[trace]
+            size = value[sizeIdx][0]
+            for item in value:
+                (psize, p, pwrite, phr) = item
+                if psize == size and p == 1:
+                    hr = phr
+                    baseline[0] += psize
+                    baseline[1] += pwrite
+                    tracePotential.append((psize, pwrite))
+                    break
+            for item in value:
+                (psize, p, pwrite, phr) = item
+                if abs(hr-item[-1])<=hitRange:                    
+                    tracePotential.append((psize, pwrite))
+            result.append(tracePotential)
+    basecost = 
+
+            

@@ -18,9 +18,19 @@ g = 0.014/3600/danwei
 # run overflow:
 # 
 
+totaluclnDict = {
+    "ts_0":239289,
+    "prn_1":21209710,
+    "hm_0":610404,
+    "stg_1":20936004,
+    "wdev_0":33600,
+    "src1_2":520894,
+    "rsrch_0":93773
+}
+
 uclnDict = {"netsfs":47949, "mix":195423,
 # "mds_0":	769376,
-"hm_0":	488986,
+
 "prn_0":	985474,
 "proj_0":	462462,
 "prxy_0":	79483,
@@ -30,7 +40,7 @@ uclnDict = {"netsfs":47949, "mix":195423,
 "src2_0":	104953,
 # "stg_0":	1608935,
 # "ts_0":	131140,
-# "wdev_0":	52111,
+
 # "web_0":	1887115,
 
 "probuild": 1970,
@@ -47,7 +57,7 @@ uclnDict = {"netsfs":47949, "mix":195423,
 "dad807":	294190,
 "dap812":	224019,
 
-"prn_1" :	19343730 ,
+
 # "proj_2" : 	107472935,
 "proj_3" : 	1383543,
 # "prxy_1" : 	196870,
@@ -244,7 +254,7 @@ def mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p):
 
     
     load_lines(path, traceID, totalTimeLength, timeStart, lines, uclnDict)
-    size = int(sizerate*len(uclnDict))
+    size = int(sizerate*totaluclnDict[traceID])
     # 稀疏周期，size过小
     if size <= 100:
         return 
@@ -262,25 +272,26 @@ def mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p):
     
     print(traceID, "size", size, p)
     print("total hit rate", 1.0*ssd.hit/req, "update", ssd.update)
-    global g
+    
+    dwpd = 1.0*ssd.update/size/totalTimeLength*24*3600*danwei
 
-    if ssd.update > 1.0*size * g * totalTimeLength:
-        cost = 1.0*ssd.update/g/totalTimeLength
-    else:
-        cost = size
-    print(ssd.update, size, g*totalTimeLength, 1.0*size * g * totalTimeLength, 1.0*ssd.update/size, cost)
+    dwpd1 = max(dwpd, 0.3)
+    dwpd2 = max(dwpd, 3)
+    dwpd3 = max(dwpd, 10)
+
+    print(ssd.update, size, g*totalTimeLength, 1.0*size * g * totalTimeLength, 1.0*ssd.update/size, dwpd)
     logFile = open(logFilename, "a")
     print(traceID, timeStart/totalTimeLength, totalTimeLength/danwei, 
         sizerate, size, p, 1.0*ssd.hit/req, ssd.update, req, 
-        round(1.0*readReq/req,3), cost, sep=',', file=logFile)
+        round(1.0*readReq/req,3), dwpd, dwpd1, dwpd2, dwpd3, sep=',', file=logFile)
     logFile.close()
     
 
-uclnDict = {
-    "prxy_0": 25331,
-"usr_1": 319484 ,
-"web_0": 4567 
-}
+# uclnDict = {
+#     "prxy_0": 25331,
+# "usr_1": 319484 ,
+# "web_0": 4567 
+# }
 # load_metadata_dict()
 # # print(uclnDict)
 # # print(len(uclnDict))
@@ -293,22 +304,26 @@ uclnDict = {
 # traceList = ["web_1", "wdev_0", "mds_0", "src2_0", "rsrch_0", "ts_0", "stg_0", "proj_3", 
 # "web_0", "src2_1", "usr_1", "src1_2", "src2_2", "prn_0", "stg_1", 
 # "prxy_0", "mds_1", "proj_0", "proj_4", "prn_1", "web_2"] 
-spList = [(2,1)]
+
 # pList = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]
-# sList = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.15, 0.2, 0.25, 0.3]
-traceList = ["ts_0", "prn_1", "hm_0", "stg_1", "wdev_0",
-"src1_2", "rsrch_0"]
-starts = [23, 13, 20, 25, 17, 23, 4]
+sList = [0.01, 0.05]
+# traceList = ["ts_0", "prn_1", "hm_0", "stg_1", "wdev_0",
+# "src1_2", "rsrch_0"]
+traceList = ["hm_0"]
+
+# starts = [23, 13, 20, 25, 17, 23, 4]
 path = "/home/trace/ms-cambridge/part/"
 totalTimeLength = 5*3600*danwei
 timeStart = 0
-for i in range(0,7):
-    traceID = traceList[i]
+for i in range(len(traceList)):
+    for j in range(20, 21):
+        traceID = traceList[i]
 
-    for (sizerate, p) in spList:   
-        timeStart = starts[i]*totalTimeLength
-        start = time.clock()
-        mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p)
-        end = time.clock()
-        print(traceID, sizerate, p, "consumed ", end-start, "s")
-		# sys.exit(-1) 
+        for sizerate in sList:   
+            p = 1
+            timeStart = j*totalTimeLength
+            start = time.clock()
+            mtc_test_size_p(path, traceID, totalTimeLength, timeStart, sizerate, p)
+            end = time.clock()
+            print(traceID, sizerate, p, "consumed ", end-start, "s")
+    		# sys.exit(-1) 

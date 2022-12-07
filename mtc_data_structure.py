@@ -387,7 +387,7 @@ class Cache(object):
         s = min(int(self.ucln), s)
         self.cache.change_size(s)
         self.cache.change_p(p)
-
+        
         # self.cacheSizeRatio = round(1.0*s/self.ucln, 2)
         # print(self.trace, s, p, self.ucln, self.req, self.cacheSizeRatio, self.cacheSizeRatio>=1)
         # assert self.cacheSizeRatio < 1

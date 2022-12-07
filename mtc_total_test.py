@@ -289,7 +289,7 @@ def process(traces, starts, totalTimeLength, unitLength, bsizeRate, csizeRate, p
     # print("device size=", device.size)
     # print(csizeRate, bsizeRate, size, int(csizeRate/bsizeRate)*size, device.size)
     periodStart = 0
-    periodLength = 60*danwei
+    
     reqs = get_reqs(traces)
 
     print("Reqs = ", len(reqs))
