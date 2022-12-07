@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-  
+# 热力图
 import random
 import csv
 import sys
@@ -8,6 +9,7 @@ from matplotlib import axes
 from matplotlib.font_manager import FontProperties
 font = FontProperties(fname='/Library/Fonts/Songti.ttc')
 # https://blog.csdn.net/coder_Gray/article/details/81867639
+# https://blog.csdn.net/weixin_39541558/article/details/79813936
 def draw(trace, xLabel, yLabel, data):
     #定义热图的横纵坐标
     # xLabel = ['A','B','C','D','E']
@@ -28,18 +30,22 @@ def draw(trace, xLabel, yLabel, data):
     ax = fig.add_subplot(111)
     #定义横纵坐标的刻度
     ax.set_yticks(range(len(yLabel)))
-    ax.set_yticklabels(yLabel, fontproperties=font)
+    ax.set_ylabel('size rate', fontproperties=font, fontsize=20)
+    ax.set_yticklabels(yLabel, fontproperties=font, fontsize=18)
     ax.set_xticks(range(len(xLabel)))
-    ax.set_xticklabels(xLabel)
+    ax.set_xticklabels(xLabel, fontproperties=font, fontsize=18)
+    ax.set_xlabel('p', fontproperties=font, fontsize=20)
     #作图并选择热图的颜色填充风格，这里选择hot
     im = ax.imshow(data, cmap=plt.cm.bone_r)
     #增加右侧的颜色刻度条
     plt.colorbar(im)
     #增加标题
-    plt.title(trace, fontproperties=font)
+    plt.title(trace, fontproperties=font, fontsize=20)
     #show
+    fig.subplots_adjust(bottom=0.15)
     # plt.show()
-    plt.savefig(trace + '.png')
+    # fig.set_size_inches(1, 4) 
+    plt.savefig(trace + '.png', dpi=300)
 
 def generate_data(xpLabel, ysizeLabel, mydict):
     
@@ -69,7 +75,8 @@ with open('test.csv', 'rb') as csvfile:
             mydict = {}
         xp = float(row[1])
         ysize = float(row[2])
-        value = int(1000*float(row[4]))
+        # value = int(1000*float(row[4]))
+        value = float(row[4])
         if xp not in xpLabel:
             xpLabel.append(xp)
         if ysize not in ysizeLabel:
@@ -87,6 +94,7 @@ for trace in d:
     ysizeLabel.sort(reverse=True)
     data = generate_data(xpLabel, ysizeLabel, mydict)
     draw(trace, xpLabel, ysizeLabel, data)
+    # sys.exit(-1)
 
 
 
