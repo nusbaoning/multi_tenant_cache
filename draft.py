@@ -16,25 +16,37 @@ class Log(object):
 		self.periodNum = 0
 		self.periodLength = parameters.periodLength 
 		self.start = time.clock()
+		# l is list of delta probs, example: [-0.1, 0.1, -0.2, 0.2]
 		self.l = parameters.l
 		self.parameters = parameters
+		self.cost = 0
 
-	def tick():
+	def tick(self):
 		self.reqNum += 1
 		if self.reqNum % self.periodLength == 0:
 			self.periodNum += 1
 			return True
 		return False
 
+	def print(self, ssd1, ssd2):
+		print(ssd1.get_hit(), ssd1.get_update())
+		print(ssd2.get_hit(), ssd2.get_update())
+		print(ssd1.get_size()*ssd1.get_p(), ssd1.get_size()*ssd1.get_update())
+		print(self.cost)
 
+	def record(self, mc):
+		self.cost += mc
+		
 
 class Parameter(object):
 	"""docstring for Parameter"""
-	def __init__(self, size, p, evictQueue, shadowQueue):
+	def __init__(self, size, p, evictQueue, shadowQueue, l, periodLength):
 		self.size = size
 		self.p = p
 		self.evictQueue = evictQueue
 		self.shadowQueue = shadowQueue
+		self.l = l
+		self.periodLength = periodLength
 		
 
 class DPLRU(PLRU):
@@ -67,6 +79,7 @@ class DPLRU(PLRU):
 				del self.log[req]
 
 	def get_req_hit(self, req, loc):
+		# print(self.log, req, loc)
 		return self.log[req][loc]
 
 	def update_queue(self, req, sign):
@@ -105,7 +118,7 @@ class DPLRU(PLRU):
 		return (evict, update)	
 
 	def change_size(self, n):
-		l = super(DPLRU, self).change_size()
+		l = super(DPLRU, self).change_size(n)
 		for req in l:
 			self.update_queue(req, 2)
 
@@ -121,8 +134,10 @@ class DPLRU(PLRU):
 	def parseq(self, loc):
 		if loc == 2:
 			q = self.evictQueue
-		else:
+		elif loc == 3:
 			q = self.shadowQueue
+		else:
+			q = self.get_top_n(self.size)
 		# ll = []
 		# (l, head, tail) = q
 		# i = head
@@ -153,40 +168,61 @@ def update_cache(req, ssd):
 def cal_p(ssd, loc, actualp, vp):
 	h = 0
 	em = int(1/actualp)
-	en = int(1/vp)
+	en = int(1/vp)	
 	q = ssd.parseq(loc)
-	if q[2] < q[3]:
-		q = q[1][q[2]:q[3]]
-	if actualp > vp: #reduce
-		for req in q:
-			h += min(en-em, ssd.get_req_hit(req, loc))
-		h = -h
-	else: #add
-		for req in q:
+	print("loc:\t", loc)
+	print("queue:\t", q)
+
+	if loc!=1:		
+		if q[1] < q[2]:
+			q = q[0][q[1]:q[2]]	
+		else:
+			q = q[0]
+
+	for req in q:
+		if req == -1:
+			continue
+		if actualp > vp: # reduce			
+			h += min(en-em, ssd.get_req_hit(req, loc))	
+		else: #add
 			h += max(ssd.get_req_hit(req, loc)-en, 0)
+	if actualp > vp: #reduce
+		h = -h
 	return h
 
+# calculate the changing size with objective
+# parameters: ssd, loc is for identifying location, but objective can also do it
+# objective is an integer, means # of hits you need to add or reduce 
+# upbound is the max value to change. It is common for data not to be hitted so the upbound will become the final result.
 def cal_s(ssd, loc, objective, upbound):
 	i = 0
+	
+	print("objective\t", objective)
+
+	if objective == 0:
+		return 0
+
 	if objective > 0:
 		q = ssd.parseq(2)
 		(l, head, tail) = q
 		
 		while l[head]!=-1 and i<upbound:
 			req = l[head]
-			objective-=self.get_req_hit(req, 2)
+			objective-=ssd.get_req_hit(req, 2)
 			i += 1
 			head = (head+1) % len(l)
 			if objective<=0:
 				return i
 		return upbound
 
+	# objective < 0
 	q = ssd.get_tail_n(upbound)
 	for req in q:
 		objective += ssd.get_req_hit(req, 1)
 		i += 1
 		if objective>=0:
 			return i
+	return upbound
 			
 		
 
@@ -199,20 +235,26 @@ def modify_config(ssd, baseline, log):
 	mc = actualp * actuals
 	config = (-1, -1)
 	for i in log.l:
-		vp = min(1, max(actualp + i*op, 0.2))
+		vp = min(1, max(actualp + i, 0.2))
+		print("vp", vp)
 		if actualp > vp:
+			# print(type(ssd))
+			# reduce update p, calculate tail of LRU
 			h = cal_p(ssd, 1, actualp, vp)
-			s = cal_s(ssd, 2, objective-h) + actuals
+
+			s = cal_s(ssd, 2, objective-h, int(max(1, osize*0.1))) + actuals
 		else:
 			h = cal_p(ssd, 3, actualp, vp)
-			s = cal_s(ssd, 1, objective-h) + actuals
+			s = cal_s(ssd, 1, objective-h, int(osize*0.1)) + actuals
 		if mc > vp*s:
 			mc = vp*s
 			config = (vp, s)
+		print("vp:", vp, "\th:", h, "\ts:", s, "\tcost:", vp*s, "\tmc:", mc)
 
 	if vp!=actualp and s!=actuals:
 		ssd.change_size(s)
 		ssd.change_p(vp)
+	log.record(mc)
 	return config
 
 def do_single_trace(traceName, parameters):
@@ -224,9 +266,7 @@ def do_single_trace(traceName, parameters):
 
 	#initial
 	baseline = PLRU(parameters.size, parameters.p)
-	ssd = PLRU(parameters.size, parameters.p)
-	evictQueue = ([(-1, -1)]*parameters.evictQueue, 0, 0)
-	shadowQueue = ([(-1, -1)]*parameters.shadowQueue, 0, 0)
+	ssd = DPLRU(parameters)
 	log = Log(parameters)
 
 	for req in reqs:
@@ -236,24 +276,54 @@ def do_single_trace(traceName, parameters):
 		
 		debug = baseline.hit + baseline.update
 		update_cache(req, baseline)
-		if baseline.hit + baseline.update - debug == 0:
-			eprint("error")
-			sys.exit(-1)
+		update_cache(req, ssd)
+		# if baseline.hit + baseline.update - debug == 0:
+		# 	print(req, baseline.get_hit(), baseline.get_update(), debug)
+		# 	eprint("error")
+		# 	sys.exit(-1)
 
-		(shadow, evict) = update_cache(req, ssd)
-		update_queue(evict, evictQueue)
-		updateShadow(shadow, shadowQueue)
-
+		# ssd.update_cache(req)
 	log.print(baseline, ssd)
  
+parameters = Parameter(2, 0.7, 2, 2, [-0.2, -0.1, 0.1, 0.2], 14) 
+# {
+# "size": 30,
+# "p":	0.9,
+# "evictQueue": 10,
+# "shadowQueue": 10,
+# "periodLength": 50,
+# "l": 
+# }
+do_single_trace("test.req", parameters)
 
-fin = open("test.req", "r")
-reqs = load_trace(fin)
-fin.close()
-print(reqs)
-pd = Parameter(3, 0.8, 2, 2)
-ssd = DPLRU(pd)
-for req in reqs:
-	a = update_cache(req, ssd)
-	print(a)
-	print(ssd.get_hit(), ssd.get_update(), ssd.get_log(), ssd.get_evictQueue(), ssd.get_shadowQueue())
+# fin = open("test.req", "r")
+# reqs = load_trace(fin)
+# fin.close()
+# print(reqs)
+# pd = Parameter(3, 0.8, 2, 2)
+# ssd = DPLRU(pd)
+# for req in reqs:
+# 	a = update_cache(req, ssd)
+# 	print(a)
+# 	print(ssd.get_hit(), ssd.get_update(), ssd.get_log(), ssd.get_evictQueue(), ssd.get_shadowQueue())
+
+
+###
+# test req 
+# 0 0 1
+# 0 0 2
+# 1 0 1
+# 0 0 3
+# 0 0 4
+# 0 0 1
+# 0 0 1
+# 0 0 2
+# 0 0 1
+# 0 0 3
+# 0 0 5
+# 0 0 6
+# 0 0 7
+# 0 0 8
+# 0 0 9
+# 0 0 10
+###
